@@ -1,0 +1,157 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design system — "Frosted glass dispatch"
+ * Arabic RTL console: misty background, teal brand, frosted glass panels.
+ * All colors are oklch tokens. Never hardcode colors in components.
+ */
+
+@theme inline {
+  --font-sans: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+
+  --color-brand: var(--primary);
+  --color-glow-a: var(--glow-a);
+  --color-glow-b: var(--glow-b);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-neutral-chip: var(--neutral-chip);
+  --color-neutral-chip-foreground: var(--neutral-chip-foreground);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  --background: oklch(0.951 0.004 228);
+  --foreground: oklch(0.283 0.026 182);
+
+  --card: oklch(1 0 0 / 0.6);
+  --card-foreground: oklch(0.283 0.026 182);
+  --popover: oklch(0.99 0.002 228);
+  --popover-foreground: oklch(0.283 0.026 182);
+
+  --primary: oklch(0.505 0.088 176);
+  --primary-foreground: oklch(0.99 0.002 228);
+
+  --secondary: oklch(1 0 0 / 0.5);
+  --secondary-foreground: oklch(0.283 0.026 182);
+
+  --muted: oklch(0.283 0.026 182 / 0.06);
+  --muted-foreground: oklch(0.283 0.026 182 / 0.6);
+
+  --accent: oklch(0.552 0.168 45);
+  --accent-foreground: oklch(0.99 0.002 228);
+
+  --destructive: oklch(0.577 0.2 20);
+  --destructive-foreground: oklch(0.99 0.002 228);
+
+  --border: oklch(0.283 0.026 182 / 0.08);
+  --input: oklch(1 0 0 / 0.7);
+  --ring: oklch(0.505 0.088 176 / 0.4);
+
+  --glow-a: oklch(0.505 0.088 176 / 0.25);
+  --glow-b: oklch(0.79 0.09 235 / 0.35);
+
+  --info: oklch(0.6 0.13 235 / 0.12);
+  --info-foreground: oklch(0.48 0.13 240);
+  --success: oklch(0.65 0.14 160 / 0.12);
+  --success-foreground: oklch(0.5 0.13 160);
+  --warning: oklch(0.78 0.15 75 / 0.14);
+  --warning-foreground: oklch(0.55 0.13 62);
+  --neutral-chip: oklch(0.283 0.026 182 / 0.07);
+  --neutral-chip-foreground: oklch(0.283 0.026 182 / 0.6);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@utility glass {
+  background-color: var(--card);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+@utility num {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum";
+}
+
+@keyframes meter-fill {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility meter {
+  animation: meter-fill 1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@utility rise {
+  animation: rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* iOS zooms the page into any focused field under 16px. Unlayered, so it beats text-* utilities. */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

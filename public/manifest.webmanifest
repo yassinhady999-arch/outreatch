@@ -1,0 +1,23 @@
+{
+  "name": "مِرسال — توزيع العملاء على أرقام الإرسال",
+  "short_name": "مِرسال",
+  "description": "توزيع أرقام العملاء على أرقام الإرسال بحدود يومية ومتابعة حالة كل عميل.",
+  "lang": "ar",
+  "dir": "rtl",
+  "id": "/",
+  "start_url": "/today",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#eceff1",
+  "theme_color": "#eceff1",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790523096662,
+      "tag": "0000_create_leads_distribution",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790583620024,
+      "tag": "0001_add_instagram_to_leads",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790656460128,
+      "tag": "0002_distribute_with_rollover",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790921180374,
+      "tag": "0003_distribution_fixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791234445547,
+      "tag": "0004_forecast_leads",
+      "breakpoints": true
+    }
+  ]
+}
