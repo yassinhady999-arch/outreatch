@@ -8,6 +8,7 @@ import {
   STATUS_LABEL,
   STATUS_TONE,
   distributeLeads,
+  fetchCategories,
   fetchForecast,
   fetchSenders,
   fetchTodayAssignments,
@@ -60,6 +61,10 @@ function TodayPage() {
     queryKey: ["assignments", date],
     queryFn: () => fetchTodayAssignments(date),
   });
+  // Labels each client with its category (none until the categories migration has run)
+  const categories = useQuery({ queryKey: ["categories"], queryFn: fetchCategories, retry: false });
+  const categoryName = (id: string | null | undefined) =>
+    categories.data?.find((c) => c.id === id)?.name;
   const forecast = useQuery({
     queryKey: ["forecast", date],
     queryFn: () => fetchForecast(date),
@@ -187,7 +192,7 @@ function TodayPage() {
         ) : null}
 
         {isFuture ? (
-          <ForecastView senders={activeSenders} rows={forecastRows} />
+          <ForecastView senders={activeSenders} rows={forecastRows} categoryName={categoryName} />
         ) : shownSenders.length === 0 ? (
           <div className="glass rounded-2xl p-8 text-center text-sm text-muted-foreground">
             أضف أرقام الإرسال أولًا من صفحة «أرقام الإرسال»، ثم اضغط توزيع.
@@ -248,6 +253,7 @@ function TodayPage() {
                           a={a}
                           onToggle={toggleSent.mutate}
                           onNoWhatsapp={toggleNoWhatsapp.mutate}
+                          category={categoryName(a.leads?.category_id)}
                         />
                       ))
                     )}
@@ -324,7 +330,15 @@ function QueueSummary({
 }
 
 /** A future day: who each active sender is expected to message, from forecast_leads(). */
-function ForecastView({ senders, rows }: { senders: Sender[]; rows: ForecastRow[] }) {
+function ForecastView({
+  senders,
+  rows,
+  categoryName,
+}: {
+  senders: Sender[];
+  rows: ForecastRow[];
+  categoryName: (id: string | null | undefined) => string | undefined;
+}) {
   if (senders.length === 0)
     return (
       <div className="glass rounded-2xl p-8 text-center text-sm text-muted-foreground">
@@ -362,6 +376,7 @@ function ForecastView({ senders, rows }: { senders: Sender[]; rows: ForecastRow[
                 mine.map((r) => (
                   <div key={r.lead_id} className="flex min-w-0 items-center gap-2">
                     <span className="truncate text-sm">{r.name || r.phone}</span>
+                    <CategoryChip name={categoryName(r.category_id)} />
                     <span className="num shrink-0 text-[11px] text-muted-foreground" dir="ltr">
                       {r.phone}
                     </span>
@@ -376,14 +391,24 @@ function ForecastView({ senders, rows }: { senders: Sender[]; rows: ForecastRow[
   );
 }
 
+function CategoryChip({ name }: { name: string | undefined }) {
+  return name ? (
+    <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground ring-1 ring-border">
+      {name}
+    </span>
+  ) : null;
+}
+
 function AssignmentRow({
   a,
   onToggle,
   onNoWhatsapp,
+  category,
 }: {
   a: TodayAssignment;
   onToggle: (v: { id: string; sent: boolean }) => void;
   onNoWhatsapp: (v: { id: string; noWhatsapp: boolean }) => void;
+  category: string | undefined;
 }) {
   const lead = a.leads;
   const noWa = lead?.no_whatsapp ?? false;
@@ -411,6 +436,7 @@ function AssignmentRow({
             {lead?.phone}
           </span>
         </span>
+        <CategoryChip name={category} />
         {rolledOver ? (
           <span
             title={`مُرحَّل من ${formatArabicDate(assignedOn)}`}
@@ -424,6 +450,7 @@ function AssignmentRow({
         {lead && !noWa ? (
           <WhatsAppButtons
             phone={lead.phone}
+            message={lead.message}
             onOpen={() => {
               if (!a.sent) onToggle({ id: a.id, sent: true });
             }}

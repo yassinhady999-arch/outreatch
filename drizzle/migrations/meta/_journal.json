@@ -36,6 +36,13 @@
       "when": 1791234445547,
       "tag": "0004_forecast_leads",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793709491495,
+      "tag": "0005_categories_and_messages",
+      "breakpoints": true
     }
   ]
 }

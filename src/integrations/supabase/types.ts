@@ -62,12 +62,38 @@ export type Database = {
           },
         ]
       }
+      categories: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          user_id?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
+          category_id: string | null
           country: string | null
           created_at: string
           id: string
           instagram: string | null
+          message: string | null
           name: string | null
           no_whatsapp: boolean
           note: string | null
@@ -76,10 +102,12 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          category_id?: string | null
           country?: string | null
           created_at?: string
           id?: string
           instagram?: string | null
+          message?: string | null
           name?: string | null
           no_whatsapp?: boolean
           note?: string | null
@@ -88,10 +116,12 @@ export type Database = {
           user_id?: string
         }
         Update: {
+          category_id?: string | null
           country?: string | null
           created_at?: string
           id?: string
           instagram?: string | null
+          message?: string | null
           name?: string | null
           no_whatsapp?: boolean
           note?: string | null
@@ -99,7 +129,15 @@ export type Database = {
           status?: Database["public"]["Enums"]["lead_status"]
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "leads_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       senders: {
         Row: {
@@ -136,6 +174,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      category_stats: { Args: never; Returns: Json }
       distribute_leads: { Args: { p_today?: string }; Returns: number }
       forecast_leads: { Args: { p_today: string; p_date: string }; Returns: Json }
     }

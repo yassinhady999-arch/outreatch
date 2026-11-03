@@ -5,6 +5,7 @@ export type LeadStatus = Database["public"]["Enums"]["lead_status"];
 export type Lead = Database["public"]["Tables"]["leads"]["Row"];
 export type Sender = Database["public"]["Tables"]["senders"]["Row"];
 export type Assignment = Database["public"]["Tables"]["assignments"]["Row"];
+export type Category = Database["public"]["Tables"]["categories"]["Row"];
 
 export const STATUS_ORDER: LeadStatus[] = [
   "new",
@@ -63,6 +64,36 @@ export function whatsappNumber(phone: string) {
   return p;
 }
 
+/** What follows the country code on a mobile number; anything else is a landline/unified/toll-free line. */
+const MOBILE_AFTER_CODE: Record<string, RegExp> = {
+  "+966": /^5/, // Saudi: 05… mobile; 01x landline, 920 unified, 800 toll-free
+  "+971": /^5/, // UAE
+  "+965": /^[569]/, // Kuwait
+  "+974": /^[3567]/, // Qatar
+  "+973": /^[36]/, // Bahrain
+  "+968": /^[79]/, // Oman
+  "+962": /^7/, // Jordan
+  "+20": /^1/, // Egypt
+};
+
+/**
+ * true = mobile, false = landline / unified (920) / toll-free (800), which almost never have
+ * WhatsApp, null = country not covered or no country code, so no guess is made.
+ */
+export function isMobileNumber(phone: string): boolean | null {
+  const p = normalizePhone(phone);
+  const code = Object.keys(MOBILE_AFTER_CODE).find((c) => p.startsWith(c));
+  return code ? (MOBILE_AFTER_CODE[code]?.test(p.slice(code.length)) ?? null) : null;
+}
+
+/** A clickable link from "@handle", "instagram.com/handle" or a full URL. */
+export function instagramUrl(value: string) {
+  const v = value.trim();
+  if (/^https?:\/\//i.test(v)) return v;
+  if (v.startsWith("@")) return `https://instagram.com/${v.slice(1)}`;
+  return `https://${v}`;
+}
+
 export function countryFromPhone(phone: string) {
   const map: Record<string, string> = {
     "+966": "السعودية",
@@ -99,13 +130,77 @@ export async function fetchSenders() {
   return data;
 }
 
+/** The API returns at most this many rows per request, so bigger lists are fetched in pages. */
+const PAGE = 1000;
+
+/** All of the user's leads, newest first. */
 export async function fetchLeads() {
+  const all: Lead[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("leads")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .order("id")
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    all.push(...data);
+    if (data.length < PAGE) return all;
+  }
+}
+
+/* ---------- categories ---------- */
+
+/** Per-category counts from category_stats(); category_id null = uncategorized. */
+export type CategoryStats = {
+  category_id: string | null;
+  total: number;
+  /** not distributed yet */
+  waiting: number;
+  /** distributed, not sent yet */
+  pending: number;
+  sent: number;
+  no_whatsapp: number;
+};
+
+export async function fetchCategories() {
   const { data, error } = await supabase
-    .from("leads")
+    .from("categories")
     .select("*")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: true });
   if (error) throw error;
   return data;
+}
+
+export async function fetchCategoryStats() {
+  const { data, error } = await supabase.rpc("category_stats");
+  if (error) throw error;
+  return (data ?? []) as unknown as CategoryStats[];
+}
+
+export async function addCategory(name: string) {
+  const { error } = await supabase.from("categories").insert({ name: name.trim() });
+  if (error) {
+    if (error.code === "23505") throw new Error("DUPLICATE");
+    throw error;
+  }
+}
+
+/** Turning a category off frees its unsent leads; turning it on lets them back into the queue. */
+export async function updateCategory(id: string, patch: { name?: string; active?: boolean }) {
+  const { error } = await supabase.from("categories").update(patch).eq("id", id);
+  if (error) {
+    if (error.code === "23505") throw new Error("DUPLICATE");
+    throw error;
+  }
+  await distributeLeads().catch(() => 0);
+}
+
+/** The category's leads stay, uncategorized (and so distributable again). */
+export async function deleteCategory(id: string) {
+  const { error } = await supabase.from("categories").delete().eq("id", id);
+  if (error) throw error;
+  await distributeLeads().catch(() => 0);
 }
 
 export type TodayAssignment = Assignment & { leads: Lead | null };
@@ -127,12 +222,22 @@ export async function fetchTodayAssignments(date?: string) {
   return (data ?? []) as TodayAssignment[];
 }
 
-export async function addLead(input: { phone: string; name: string; country: string }) {
+export async function addLead(input: {
+  phone: string;
+  name: string;
+  country: string;
+  categoryId: string | null;
+}) {
   const phone = normalizePhone(input.phone);
+  // Landline / unified / toll-free numbers start out as "no WhatsApp" (can be undone)
+  const noWhatsapp = isMobileNumber(phone) === false;
   const { error } = await supabase.from("leads").insert({
     phone,
     name: input.name.trim() || null,
     country: input.country || countryFromPhone(phone) || null,
+    no_whatsapp: noWhatsapp,
+    // Only sent when set, so adding still works on a database without categories yet
+    ...(input.categoryId ? { category_id: input.categoryId } : {}),
   });
   if (error) {
     if (error.code === "23505" || error.code === "23514" || /duplicate/i.test(error.message)) {
@@ -141,34 +246,51 @@ export async function addLead(input: { phone: string; name: string; country: str
     throw error;
   }
   await distributeLeads().catch(() => 0);
+  return { noWhatsapp };
 }
 
-export type LeadImportRow = { phone: string; name: string; instagram: string };
+export type LeadImportRow = { phone: string; name: string; instagram: string; message: string };
 
-export async function addLeadsBulk(rows: LeadImportRow[]) {
+export async function addLeadsBulk(rows: LeadImportRow[], categoryId: string | null) {
   const cleaned = rows
     .map((r) => ({ ...r, phone: normalizePhone(r.phone) }))
     .filter((r) => r.phone.length >= 6);
   const unique = [...new Map(cleaned.map((r) => [r.phone, r])).values()];
 
-  const { data: existing, error: fetchErr } = await supabase.from("leads").select("phone");
-  if (fetchErr) throw fetchErr;
-  const existingSet = new Set((existing ?? []).map((l) => l.phone));
-
-  const fresh = unique.filter((r) => !existingSet.has(r.phone));
-  if (fresh.length > 0) {
-    const { error } = await supabase.from("leads").insert(
-      fresh.map((r) => ({
-        phone: r.phone,
-        name: r.name.trim() || null,
-        instagram: r.instagram.trim() || null,
-        country: countryFromPhone(r.phone) || null,
-      })),
-    );
-    if (error) throw error;
-    await distributeLeads().catch(() => 0);
+  // Numbers already saved (in any category) are skipped by the database itself
+  // (ON CONFLICT DO NOTHING on the user/phone key), so this holds for any list size
+  let added = 0;
+  let flagged = 0;
+  for (let i = 0; i < unique.length; i += 500) {
+    const { data, error } = await supabase
+      .from("leads")
+      .upsert(
+        unique.slice(i, i + 500).map((r) => ({
+          phone: r.phone,
+          name: r.name.trim() || null,
+          instagram: r.instagram.trim() || null,
+          country: countryFromPhone(r.phone) || null,
+          // Landline / unified / toll-free numbers start out as "no WhatsApp" (can be undone)
+          no_whatsapp: isMobileNumber(r.phone) === false,
+          ...(categoryId ? { category_id: categoryId } : {}),
+          ...(r.message.trim() ? { message: r.message.trim() } : {}),
+        })),
+        { onConflict: "user_id,phone", ignoreDuplicates: true },
+      )
+      .select("id, no_whatsapp");
+    // PGRST204: a column (message / category_id) the database doesn't have yet
+    if (error) throw error.code === "PGRST204" ? new Error("MIGRATION") : error;
+    added += data.length;
+    flagged += data.filter((l) => l.no_whatsapp).length;
   }
-  return { added: fresh.length, skipped: unique.length - fresh.length, invalid: rows.length - cleaned.length };
+  if (added > 0) await distributeLeads().catch(() => 0);
+  return {
+    added,
+    /** of the added numbers, how many were marked "no WhatsApp" as non-mobile */
+    flagged,
+    skipped: unique.length - added,
+    invalid: rows.length - cleaned.length,
+  };
 }
 
 export async function addSender(input: { phone: string; label: string; daily_limit: number }) {
@@ -227,6 +349,7 @@ export type ForecastRow = {
   phone: string;
   name: string | null;
   instagram: string | null;
+  category_id: string | null;
 };
 export type Forecast = { queued: number; capacity: number; rows: ForecastRow[] };
 

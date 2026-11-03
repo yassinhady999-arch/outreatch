@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FileUp, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { CategoriesPanel, type CategoryFilter } from "@/components/CategoriesPanel";
 import { WhatsAppButtons } from "@/components/WhatsAppButtons";
 import { parseLeadsFile } from "@/lib/import-leads";
 import {
@@ -14,15 +15,29 @@ import {
   addLeadsBulk,
   countryFromPhone,
   deleteLead,
+  fetchCategories,
+  fetchCategoryStats,
   fetchLeads,
+  instagramUrl,
   markLeadSent,
   normalizePhone,
   setLeadNoWhatsapp,
   setLeadStatus,
+  type Lead,
   type LeadStatus,
 } from "@/lib/leads";
 
 type ClientsFilter = LeadStatus | "all" | "no_wa";
+
+/** Category new clients and imports go into: a category id, "none", or "" (not chosen yet). */
+const TARGET_KEY = "mersal:target-category";
+const readTarget = () => {
+  try {
+    return localStorage.getItem(TARGET_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
 
 export const Route = createFileRoute("/_authenticated/clients")({
   head: () => ({
@@ -45,34 +60,76 @@ export const Route = createFileRoute("/_authenticated/clients")({
 function ClientsPage() {
   const qc = useQueryClient();
   const leads = useQuery({ queryKey: ["leads"], queryFn: fetchLeads });
+  const categories = useQuery({ queryKey: ["categories"], queryFn: fetchCategories, retry: false });
+  const stats = useQuery({
+    queryKey: ["category-stats"],
+    queryFn: fetchCategoryStats,
+    retry: false,
+  });
+  const cats = categories.data ?? [];
 
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [duplicate, setDuplicate] = useState<string | null>(null);
   const [filter, setFilter] = useState<ClientsFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
+  const [target, setTarget] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => setTarget(readTarget()), []);
+  const chooseTarget = (value: string) => {
+    setTarget(value);
+    try {
+      localStorage.setItem(TARGET_KEY, value);
+    } catch {
+      // per-browser convenience only
+    }
+  };
+  // A remembered category that was since deleted counts as not chosen
+  const targetValid = target === "none" || cats.some((c) => c.id === target);
+  const targetCategoryId = targetValid && target !== "none" ? target : null;
+  /** With categories set up, new clients must go somewhere on purpose. */
+  const needsTarget = cats.length > 0 && !targetValid;
+  const askForTarget = () => toast.error("اختر الفئة اللي هتضيف لها الأرقام أولًا");
+
   const importFile = useMutation({
-    mutationFn: async (file: File) => addLeadsBulk(await parseLeadsFile(file)),
-    onSuccess: ({ added, skipped, invalid }) => {
-      qc.invalidateQueries({ queryKey: ["leads"] });
+    mutationFn: async (file: File) => addLeadsBulk(await parseLeadsFile(file), targetCategoryId),
+    onSuccess: ({ added, flagged, skipped, invalid }) => {
+      qc.invalidateQueries();
       if (added > 0) toast.success(`تم استيراد ${added} عميل`);
+      if (flagged > 0)
+        toast.info(`${flagged} رقم أرضي أو موحد (مش موبايل) اتعلّم «بدون واتساب» — تقدر تلغيها لأي رقم`);
       if (skipped > 0) toast.info(`تم تخطي ${skipped} رقم مكرر`);
       if (invalid > 0) toast.info(`تم تجاهل ${invalid} صف بلا رقم صالح`);
       if (added === 0 && skipped === 0 && invalid === 0)
         toast.error("لم نجد أرقام هواتف في الملف — تأكد أن فيه عمودًا للأرقام");
     },
-    onError: () => toast.error("تعذّر قراءة الملف — تأكد أنه ملف إكسل أو CSV"),
+    onError: (err) =>
+      toast.error(
+        err instanceof Error && err.message === "MIGRATION"
+          ? "قاعدة البيانات محتاجة تحديث — شغّل ملف 0005_categories_and_messages.sql في Supabase"
+          : "تعذّر قراءة الملف — تأكد أنه ملف إكسل أو CSV",
+      ),
   });
 
   const add = useMutation({
-    mutationFn: () => addLead({ phone, name, country: countryFromPhone(normalizePhone(phone)) }),
-    onSuccess: () => {
+    mutationFn: () =>
+      addLead({
+        phone,
+        name,
+        country: countryFromPhone(normalizePhone(phone)),
+        categoryId: targetCategoryId,
+      }),
+    onSuccess: ({ noWhatsapp }) => {
       setPhone("");
       setName("");
       setDuplicate(null);
-      qc.invalidateQueries({ queryKey: ["leads"] });
-      toast.success("تمت إضافة العميل");
+      qc.invalidateQueries();
+      toast.success(
+        noWhatsapp
+          ? "تمت إضافة العميل — الرقم مش موبايل فاتعلّم «بدون واتساب»"
+          : "تمت إضافة العميل",
+      );
     },
     onError: (err) => {
       if (err instanceof Error && err.message === "DUPLICATE") {
@@ -110,15 +167,39 @@ function ClientsPage() {
   });
 
   const all = leads.data ?? [];
-  const noWaCount = all.filter((l) => l.no_whatsapp).length;
-  const rows = all.filter((l) =>
+  const inCategory = (l: Lead) =>
+    categoryFilter === "all"
+      ? true
+      : categoryFilter === "none"
+        ? l.category_id === null
+        : l.category_id === categoryFilter;
+  const scoped = all.filter(inCategory);
+  const noWaCount = scoped.filter((l) => l.no_whatsapp).length;
+  const rows = scoped.filter((l) =>
     filter === "all" ? true : filter === "no_wa" ? l.no_whatsapp : l.status === filter,
   );
   const countFor = (s: ClientsFilter) =>
-    s === "all" ? all.length : s === "no_wa" ? noWaCount : all.filter((l) => l.status === s).length;
+    s === "all"
+      ? scoped.length
+      : s === "no_wa"
+        ? noWaCount
+        : scoped.filter((l) => l.status === s).length;
+  const categoryName = (id: string | null) => cats.find((c) => c.id === id)?.name;
 
   return (
     <AppShell badge={`${all.length} عميل`}>
+      <CategoriesPanel
+        categories={cats}
+        stats={stats.data ?? []}
+        unavailable={categories.isError}
+        selected={categoryFilter}
+        onSelect={(f) => {
+          setCategoryFilter(f);
+          // Viewing a category: new clients go there too
+          if (f !== "all") chooseTarget(f);
+        }}
+      />
+
       <section className="rise glass mt-6 overflow-hidden rounded-2xl">
         {/* ============ إضافة عميل ============ */}
         <div className="p-4 pb-4 sm:p-5">
@@ -143,21 +224,47 @@ function ClientsPage() {
                 e.target.value = "";
               }}
             />
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={importFile.isPending}
-              className="flex items-center gap-2 rounded-xl bg-muted px-4 py-2.5 text-xs font-medium text-foreground ring-1 ring-border transition-colors hover:bg-muted/70 disabled:opacity-60"
-            >
-              <FileUp className="size-4 opacity-70" aria-hidden />
-              {importFile.isPending ? "جارٍ الاستيراد…" : "استيراد من إكسل"}
-            </button>
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              {cats.length > 0 ? (
+                <label className="flex flex-1 items-center gap-2 text-xs text-muted-foreground sm:flex-none">
+                  تُضاف إلى
+                  <select
+                    value={targetValid ? target : ""}
+                    onChange={(e) => chooseTarget(e.target.value)}
+                    className={`min-w-0 flex-1 rounded-xl bg-input px-3 py-2.5 text-xs text-foreground outline-none ring-1 focus:ring-2 focus:ring-ring sm:flex-none ${
+                      needsTarget ? "ring-accent" : "ring-border"
+                    }`}
+                  >
+                    <option value="" disabled>
+                      اختر الفئة…
+                    </option>
+                    {cats.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                        {c.active ? "" : " (موقوفة)"}
+                      </option>
+                    ))}
+                    <option value="none">بدون فئة</option>
+                  </select>
+                </label>
+              ) : null}
+              <button
+                onClick={() => (needsTarget ? askForTarget() : fileRef.current?.click())}
+                disabled={importFile.isPending}
+                className="flex items-center gap-2 rounded-xl bg-muted px-4 py-2.5 text-xs font-medium text-foreground ring-1 ring-border transition-colors hover:bg-muted/70 disabled:opacity-60"
+              >
+                <FileUp className="size-4 opacity-70" aria-hidden />
+                {importFile.isPending ? "جارٍ الاستيراد…" : "استيراد من إكسل"}
+              </button>
+            </div>
           </div>
 
           <form
             onSubmit={(e) => {
               e.preventDefault();
               setDuplicate(null);
-              add.mutate();
+              if (needsTarget) askForTarget();
+              else add.mutate();
             }}
             className="flex flex-wrap items-center gap-2"
           >
@@ -249,6 +356,7 @@ function ClientsPage() {
                         {l.no_whatsapp ? null : (
                           <WhatsAppButtons
                             phone={l.phone}
+                            message={l.message}
                             onOpen={() => markSentFromWhatsapp.mutate(l.id)}
                           />
                         )}
@@ -259,7 +367,7 @@ function ClientsPage() {
                         <span className="text-sm font-semibold text-foreground">{l.name || "—"}</span>
                         {l.instagram ? (
                           <a
-                            href={l.instagram}
+                            href={instagramUrl(l.instagram)}
                             target="_blank"
                             rel="noreferrer"
                             className="w-fit text-[11px] text-primary underline underline-offset-2"
@@ -276,6 +384,11 @@ function ClientsPage() {
                       {l.no_whatsapp ? (
                         <span className="mr-2 inline-block rounded-lg bg-accent/15 px-2.5 py-1 text-[11px] font-medium text-accent ring-1 ring-accent/30">
                           بدون واتساب
+                        </span>
+                      ) : null}
+                      {categoryName(l.category_id) ? (
+                        <span className="mr-2 inline-block rounded-lg bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground ring-1 ring-border">
+                          {categoryName(l.category_id)}
                         </span>
                       ) : null}
                       {l.country ? (
@@ -330,7 +443,7 @@ function ClientsPage() {
         <div className="border-t border-border px-5 py-3">
           <p className="text-xs text-muted-foreground">
             إجمالي العملاء: <span className="font-semibold text-primary">{all.length}</span>
-            {filter !== "all" ? (
+            {filter !== "all" || categoryFilter !== "all" ? (
               <>
                 {" "}— معروض حاليًا: <span className="font-semibold text-foreground">{rows.length}</span>
               </>
