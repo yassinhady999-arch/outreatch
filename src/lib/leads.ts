@@ -251,6 +251,28 @@ export async function addLead(input: {
 
 export type LeadImportRow = { phone: string; name: string; instagram: string; message: string };
 
+type SavedLead = Pick<Lead, "id" | "phone" | "name" | "instagram" | "message">;
+type LeadPatch = { message?: string; name?: string; instagram?: string };
+
+/**
+ * For numbers that were already saved: the file's message wins (it's the newest version),
+ * and a missing name / Instagram gets filled in. Nothing else (category, status, WhatsApp
+ * flag) is touched. Returns only the leads that actually change.
+ */
+export function enrichmentPatches(saved: SavedLead[], rows: LeadImportRow[]) {
+  const byPhone = new Map(rows.map((r) => [normalizePhone(r.phone), r]));
+  return saved.flatMap((lead) => {
+    const row = byPhone.get(lead.phone);
+    if (!row) return [];
+    const patch: LeadPatch = {};
+    const message = row.message.trim();
+    if (message && message !== lead.message) patch.message = message;
+    if (!lead.name && row.name.trim()) patch.name = row.name.trim();
+    if (!lead.instagram && row.instagram.trim()) patch.instagram = row.instagram.trim();
+    return Object.keys(patch).length > 0 ? [{ id: lead.id, patch }] : [];
+  });
+}
+
 export async function addLeadsBulk(rows: LeadImportRow[], categoryId: string | null) {
   const cleaned = rows
     .map((r) => ({ ...r, phone: normalizePhone(r.phone) }))
@@ -261,6 +283,7 @@ export async function addLeadsBulk(rows: LeadImportRow[], categoryId: string | n
   // (ON CONFLICT DO NOTHING on the user/phone key), so this holds for any list size
   let added = 0;
   let flagged = 0;
+  const insertedPhones = new Set<string>();
   for (let i = 0; i < unique.length; i += 500) {
     const { data, error } = await supabase
       .from("leads")
@@ -277,18 +300,50 @@ export async function addLeadsBulk(rows: LeadImportRow[], categoryId: string | n
         })),
         { onConflict: "user_id,phone", ignoreDuplicates: true },
       )
-      .select("id, no_whatsapp");
+      .select("id, phone, no_whatsapp");
     // PGRST204: a column (message / category_id) the database doesn't have yet
     if (error) throw error.code === "PGRST204" ? new Error("MIGRATION") : error;
     added += data.length;
     flagged += data.filter((l) => l.no_whatsapp).length;
+    data.forEach((l) => insertedPhones.add(l.phone));
   }
+
+  // Numbers that already existed: bring in the file's message / missing details, so
+  // re-importing a corrected file (e.g. one with messages) updates them instead of skipping
+  let updated = 0;
+  const existing = unique.filter((r) => !insertedPhones.has(r.phone));
+  for (let i = 0; i < existing.length; i += 200) {
+    const chunk = existing.slice(i, i + 200);
+    const { data: saved, error } = await supabase
+      .from("leads")
+      .select("id, phone, name, instagram, message")
+      .in(
+        "phone",
+        chunk.map((r) => r.phone),
+      );
+    if (error) throw error.code === "42703" ? new Error("MIGRATION") : error;
+    const patches = enrichmentPatches(saved, chunk);
+    // A few at a time to stay gentle on the API
+    for (let j = 0; j < patches.length; j += 10) {
+      const results = await Promise.all(
+        patches
+          .slice(j, j + 10)
+          .map(({ id, patch }) => supabase.from("leads").update(patch).eq("id", id)),
+      );
+      const failed = results.find((r) => r.error)?.error;
+      if (failed) throw failed;
+      updated += results.length;
+    }
+  }
+
   if (added > 0) await distributeLeads().catch(() => 0);
   return {
     added,
     /** of the added numbers, how many were marked "no WhatsApp" as non-mobile */
     flagged,
-    skipped: unique.length - added,
+    /** numbers that already existed and got the file's message / missing details */
+    updated,
+    skipped: unique.length - added - updated,
     invalid: rows.length - cleaned.length,
   };
 }
@@ -367,6 +422,19 @@ export async function fetchForecast(date: string) {
 }
 
 /** `today` is the browser's local date so the DB and the UI agree on what "today" is. */
+/** The opening line sent before the clinic's own message. */
+export const GREETING = "السلام عليكم و رحمة الله و بركاته";
+
+/** Records that the greeting went out, shown as a mark on the client's card. */
+export async function markGreeted(leadId: string) {
+  const { error } = await supabase
+    .from("leads")
+    .update({ greeted_at: new Date().toISOString() })
+    .eq("id", leadId);
+  // PGRST204: the greeted_at column isn't in the database yet (migration 0006)
+  if (error) throw error.code === "PGRST204" ? new Error("MIGRATION") : error;
+}
+
 /** Marks the lead's unsent assignment as sent; a no-op if it has none (not distributed yet). */
 export async function markLeadSent(leadId: string) {
   const { error } = await supabase

@@ -91,6 +91,7 @@ export type Database = {
           category_id: string | null
           country: string | null
           created_at: string
+          greeted_at: string | null
           id: string
           instagram: string | null
           message: string | null
@@ -105,6 +106,7 @@ export type Database = {
           category_id?: string | null
           country?: string | null
           created_at?: string
+          greeted_at?: string | null
           id?: string
           instagram?: string | null
           message?: string | null
@@ -119,6 +121,7 @@ export type Database = {
           category_id?: string | null
           country?: string | null
           created_at?: string
+          greeted_at?: string | null
           id?: string
           instagram?: string | null
           message?: string | null

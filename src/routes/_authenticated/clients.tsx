@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { FileUp, Trash2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { CategoriesPanel, type CategoryFilter } from "@/components/CategoriesPanel";
+import { GreetedChip } from "@/components/GreetedChip";
 import { WhatsAppButtons } from "@/components/WhatsAppButtons";
 import { parseLeadsFile } from "@/lib/import-leads";
 import {
@@ -19,6 +20,7 @@ import {
   fetchCategoryStats,
   fetchLeads,
   instagramUrl,
+  markGreeted,
   markLeadSent,
   normalizePhone,
   setLeadNoWhatsapp,
@@ -94,14 +96,18 @@ function ClientsPage() {
 
   const importFile = useMutation({
     mutationFn: async (file: File) => addLeadsBulk(await parseLeadsFile(file), targetCategoryId),
-    onSuccess: ({ added, flagged, skipped, invalid }) => {
+    onSuccess: ({ added, flagged, updated, skipped, invalid }) => {
       qc.invalidateQueries();
       if (added > 0) toast.success(`تم استيراد ${added} عميل`);
       if (flagged > 0)
-        toast.info(`${flagged} رقم أرضي أو موحد (مش موبايل) اتعلّم «بدون واتساب» — تقدر تلغيها لأي رقم`);
-      if (skipped > 0) toast.info(`تم تخطي ${skipped} رقم مكرر`);
+        toast.info(
+          `${flagged} رقم أرضي أو موحد (مش موبايل) اتعلّم «بدون واتساب» — تقدر تلغيها لأي رقم`,
+        );
+      if (updated > 0)
+        toast.success(`${updated} رقم كان موجود قبل كده واتحدّثت رسالته أو بياناته من الملف`);
+      if (skipped > 0) toast.info(`تم تخطي ${skipped} رقم مكرر (ما فيهوش جديد)`);
       if (invalid > 0) toast.info(`تم تجاهل ${invalid} صف بلا رقم صالح`);
-      if (added === 0 && skipped === 0 && invalid === 0)
+      if (added === 0 && updated === 0 && skipped === 0 && invalid === 0)
         toast.error("لم نجد أرقام هواتف في الملف — تأكد أن فيه عمودًا للأرقام");
     },
     onError: (err) =>
@@ -157,6 +163,19 @@ function ClientsPage() {
       setLeadNoWhatsapp(id, noWhatsapp),
     onSuccess: () => qc.invalidateQueries(),
     onError: () => toast.error("تعذّر تحديث الحالة"),
+  });
+
+  // Retried in case opening WhatsApp cut the request off
+  const greet = useMutation({
+    mutationFn: markGreeted,
+    retry: 3,
+    onSuccess: () => qc.invalidateQueries(),
+    onError: (err) =>
+      toast.error(
+        err instanceof Error && err.message === "MIGRATION"
+          ? "علامة التحية محتاجة تشغيل ملف 0006_lead_greeting.sql في Supabase"
+          : "تعذّر حفظ علامة التحية",
+      ),
   });
 
   // Opening WhatsApp counts as sending; retry in case leaving the page cut the request off
@@ -357,6 +376,8 @@ function ClientsPage() {
                           <WhatsAppButtons
                             phone={l.phone}
                             message={l.message}
+                            greeted={Boolean(l.greeted_at)}
+                            onGreet={() => greet.mutate(l.id)}
                             onOpen={() => markSentFromWhatsapp.mutate(l.id)}
                           />
                         )}
@@ -384,6 +405,11 @@ function ClientsPage() {
                       {l.no_whatsapp ? (
                         <span className="mr-2 inline-block rounded-lg bg-accent/15 px-2.5 py-1 text-[11px] font-medium text-accent ring-1 ring-accent/30">
                           بدون واتساب
+                        </span>
+                      ) : null}
+                      {l.greeted_at ? (
+                        <span className="mr-2 inline-block">
+                          <GreetedChip at={l.greeted_at} />
                         </span>
                       ) : null}
                       {categoryName(l.category_id) ? (

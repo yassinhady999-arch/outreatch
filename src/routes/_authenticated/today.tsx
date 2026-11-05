@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { GreetedChip } from "@/components/GreetedChip";
 import { WhatsAppButtons } from "@/components/WhatsAppButtons";
 import {
   STATUS_LABEL,
@@ -14,6 +15,7 @@ import {
   fetchTodayAssignments,
   formatArabicDate,
   isPending,
+  markGreeted,
   markSent,
   setLeadNoWhatsapp,
   toISODate,
@@ -107,6 +109,33 @@ function TodayPage() {
       toast.error("تعذّر تحديث الحالة");
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["assignments", date] }),
+  });
+
+  // The greeting mark shows at once; retried if opening WhatsApp cut the request off
+  const greet = useMutation({
+    mutationFn: markGreeted,
+    retry: 3,
+    onMutate: async (leadId: string) => {
+      const key = ["assignments", date];
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<TodayAssignment[]>(key);
+      const at = new Date().toISOString();
+      qc.setQueryData<TodayAssignment[]>(key, (list) =>
+        list?.map((a) =>
+          a.leads?.id === leadId ? { ...a, leads: { ...a.leads, greeted_at: at } } : a,
+        ),
+      );
+      return { previous };
+    },
+    onError: (err, _id, context) => {
+      if (context?.previous) qc.setQueryData(["assignments", date], context.previous);
+      toast.error(
+        err instanceof Error && err.message === "MIGRATION"
+          ? "علامة التحية محتاجة تشغيل ملف 0006_lead_greeting.sql في Supabase"
+          : "تعذّر حفظ علامة التحية",
+      );
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["leads"] }),
   });
 
   const toggleNoWhatsapp = useMutation({
@@ -253,6 +282,7 @@ function TodayPage() {
                           a={a}
                           onToggle={toggleSent.mutate}
                           onNoWhatsapp={toggleNoWhatsapp.mutate}
+                          onGreet={greet.mutate}
                           category={categoryName(a.leads?.category_id)}
                         />
                       ))
@@ -403,11 +433,13 @@ function AssignmentRow({
   a,
   onToggle,
   onNoWhatsapp,
+  onGreet,
   category,
 }: {
   a: TodayAssignment;
   onToggle: (v: { id: string; sent: boolean }) => void;
   onNoWhatsapp: (v: { id: string; noWhatsapp: boolean }) => void;
+  onGreet: (leadId: string) => void;
   category: string | undefined;
 }) {
   const lead = a.leads;
@@ -437,6 +469,7 @@ function AssignmentRow({
           </span>
         </span>
         <CategoryChip name={category} />
+        {lead?.greeted_at ? <GreetedChip at={lead.greeted_at} /> : null}
         {rolledOver ? (
           <span
             title={`مُرحَّل من ${formatArabicDate(assignedOn)}`}
@@ -451,6 +484,8 @@ function AssignmentRow({
           <WhatsAppButtons
             phone={lead.phone}
             message={lead.message}
+            greeted={Boolean(lead.greeted_at)}
+            onGreet={() => onGreet(lead.id)}
             onOpen={() => {
               if (!a.sent) onToggle({ id: a.id, sent: true });
             }}

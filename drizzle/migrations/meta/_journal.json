@@ -43,6 +43,13 @@
       "when": 1793709491495,
       "tag": "0005_categories_and_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793891276418,
+      "tag": "0006_lead_greeting",
+      "breakpoints": true
     }
   ]
 }
