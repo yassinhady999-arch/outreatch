@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { GREETING, whatsappNumber } from "@/lib/leads";
 
@@ -42,7 +42,7 @@ function AppLink({
 }: {
   number: string;
   text: string | null | undefined;
-  onClick?: (() => void) | undefined;
+  onClick?: ((e: MouseEvent<HTMLAnchorElement>) => void) | undefined;
   title: string;
   className: string;
   children: ReactNode;
@@ -108,18 +108,33 @@ export function WhatsAppButtons({
     }
   };
 
-  // Same tap also copies the message, so if WhatsApp ever opens the chat empty
-  // it's one long-press → Paste away (no separate copy button needed)
-  const open = () => {
-    if (message) {
-      void copyText(message).then((ok) => {
-        if (ok)
-          toast.info(
-            "الرسالة اتنسخت كمان — لو ما ظهرتش في واتساب، اضغط مطوّلًا على خانة الكتابة واختار «لصق»",
-          );
-      });
-    }
+  /**
+   * Phones: WhatsApp on Android drops anything but very short prefilled text coming from a
+   * link (tested: even two lines of the message, through every link type, opened empty), so
+   * the message goes through the system share sheet instead, which hands WhatsApp the full
+   * text. The clinic's chat (just greeted) is at the top of the share targets. Computers and
+   * browsers without sharing keep the link, and the message is copied as a fallback.
+   */
+  const open = (e?: MouseEvent<HTMLAnchorElement>) => {
     onOpen?.();
+    if (!message) return;
+    const touch = window.matchMedia("(pointer: coarse)").matches;
+    if (touch && typeof navigator.share === "function") {
+      e?.preventDefault();
+      navigator.share({ text: message }).catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return; // sheet closed
+        void copyText(message).then(
+          (ok) => ok && toast.info("الرسالة اتنسخت — افتح شات العيادة واضغط مطوّلًا ← لصق"),
+        );
+      });
+      return;
+    }
+    void copyText(message).then((ok) => {
+      if (ok)
+        toast.info(
+          "الرسالة اتنسخت كمان — لو ما ظهرتش في واتساب، اضغط مطوّلًا على خانة الكتابة واختار «لصق»",
+        );
+    });
   };
 
   return (
