@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { GREETING, whatsappNumber } from "@/lib/leads";
+import { GREETING, whatsappNumber, withoutSalam } from "@/lib/leads";
 
 const pill =
   "rounded-md px-2.5 py-1.5 text-xs font-medium ring-1 transition-colors sm:px-2 sm:py-0.5 sm:text-[11px]";
@@ -82,7 +82,7 @@ function AppLink({
  */
 export function WhatsAppButtons({
   phone,
-  message,
+  message: rawMessage,
   onOpen,
   onGreet,
   greeted = false,
@@ -94,6 +94,8 @@ export function WhatsAppButtons({
   greeted?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  // The greeting already said the salam, so the clinic's message starts after that line
+  const message = withoutSalam(rawMessage) || null;
   const n = whatsappNumber(phone);
   const text = message ? `&text=${encodeURIComponent(message)}` : "";
 

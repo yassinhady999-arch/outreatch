@@ -1,0 +1,38 @@
+# The WhatsApp bot (bot/) on Render's free plan, running around the clock.
+# Render → New → Blueprint → this repository. It asks for BOT_EMAIL and BOT_PASSWORD
+# (the site login). The WhatsApp session comes from the database (table wa_auth).
+services:
+  - type: web
+    name: mersal-bot
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: bot
+    buildCommand: npm ci
+    startCommand: node index.mjs
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Greeting hours follow Egypt's time, like on the laptop
+      - key: TZ
+        value: Africa/Cairo
+      - key: SESSION_STORE
+        value: supabase
+      - key: SUPABASE_URL
+        value: https://mkrrwlwbmrcrbxwscpkl.supabase.co
+      # The public key the site itself uses (it's in .env too); only signed-in rows are visible
+      - key: SUPABASE_ANON_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1rcnJ3bHdibXJjcmJ4d3NjcGtsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5MTA0MzQsImV4cCI6MjEwNjQ4NjQzNH0.RERuQ9HiXQE_O246A6U3aV8X_yDxCRnJbw618TTLdpE
+      - key: BOT_EMAIL
+        sync: false
+      - key: BOT_PASSWORD
+        sync: false
+      - key: SCHEDULE
+        value: 9-12:5,12-15:5,15-19:5,19-21:5
+      - key: GAP_MIN_MINUTES
+        value: "15"
+      - key: GAP_MAX_MINUTES
+        value: "25"
+      - key: REPLY_DELAY_MINUTES
+        value: "3"

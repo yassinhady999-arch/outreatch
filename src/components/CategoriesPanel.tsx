@@ -17,6 +17,7 @@ const EMPTY: Omit<CategoryStats, "category_id"> = {
   total: 0,
   waiting: 0,
   pending: 0,
+  greeted: 0,
   sent: 0,
   no_whatsapp: 0,
 };
@@ -42,7 +43,7 @@ export function CategoriesPanel({
   const [newName, setNewName] = useState("");
 
   const statsFor = (id: string | null) => stats.find((s) => s.category_id === id) ?? EMPTY;
-  const sum = (key: keyof typeof EMPTY) => stats.reduce((n, s) => n + s[key], 0);
+  const sum = (key: keyof typeof EMPTY) => stats.reduce((n, s) => n + (s[key] ?? 0), 0);
   const uncategorized = statsFor(null);
 
   const onError = (err: unknown) =>
@@ -132,7 +133,12 @@ export function CategoriesPanel({
         <button onClick={() => onSelect("all")} className={card(selected === "all")}>
           <div className="text-sm font-semibold">كل الفئات</div>
           <div className="mt-2 text-2xl font-bold tabular-nums">{sum("total")}</div>
-          <Counts waiting={sum("waiting")} pending={sum("pending")} sent={sum("sent")} />
+          <Counts
+            waiting={sum("waiting")}
+            pending={sum("pending")}
+            greeted={sum("greeted")}
+            sent={sum("sent")}
+          />
         </button>
 
         {categories.map((c) => {
@@ -148,7 +154,12 @@ export function CategoriesPanel({
             >
               <div className="text-sm font-semibold leading-snug break-words">{c.name}</div>
               <div className="mt-2 text-2xl font-bold tabular-nums">{s.total}</div>
-              <Counts waiting={s.waiting} pending={s.pending} sent={s.sent} />
+              <Counts
+                waiting={s.waiting}
+                pending={s.pending}
+                greeted={s.greeted ?? 0}
+                sent={s.sent}
+              />
               {/* Own row so the name never gets cut off on a phone-width card */}
               <div className="mt-2 flex items-center justify-between gap-1">
                 <button
@@ -206,6 +217,7 @@ export function CategoriesPanel({
             <Counts
               waiting={uncategorized.waiting}
               pending={uncategorized.pending}
+              greeted={uncategorized.greeted ?? 0}
               sent={uncategorized.sent}
             />
           </button>
@@ -215,14 +227,27 @@ export function CategoriesPanel({
   );
 }
 
-function Counts({ waiting, pending, sent }: { waiting: number; pending: number; sent: number }) {
+function Counts({
+  waiting,
+  pending,
+  greeted,
+  sent,
+}: {
+  waiting: number;
+  pending: number;
+  greeted: number;
+  sent: number;
+}) {
   return (
     <div className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
       <div>
         في الانتظار <span className="tabular-nums text-foreground">{waiting}</span>
       </div>
       <div>
-        مُسند لم يُرسل <span className="tabular-nums text-foreground">{pending}</span>
+        مستني التحية <span className="tabular-nums text-foreground">{pending}</span>
+      </div>
+      <div>
+        تحية بدون رد <span className="tabular-nums text-foreground">{greeted}</span>
       </div>
       <div>
         أُرسل <span className="tabular-nums text-foreground">{sent}</span>

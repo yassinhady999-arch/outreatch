@@ -30,3 +30,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# WhatsApp bot: login details and the linked WhatsApp session stay on this computer
+bot/.env
+bot/auth/
+bot/qr-*.png
+bot/bot.log

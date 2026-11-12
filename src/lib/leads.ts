@@ -157,8 +157,10 @@ export type CategoryStats = {
   total: number;
   /** not distributed yet */
   waiting: number;
-  /** distributed, not sent yet */
+  /** distributed, not greeted or sent yet */
   pending: number;
+  /** greeted, waiting for the clinic's reply (0007; absent before) */
+  greeted?: number;
   sent: number;
   no_whatsapp: number;
 };
@@ -205,9 +207,9 @@ export async function deleteCategory(id: string) {
 
 export type TodayAssignment = Assignment & { leads: Lead | null };
 
-/** Still waiting to be sent — rolls over to the next day. Mirrors distribute_leads(). */
+/** Still waiting for its greeting — rolls over to the next day. Mirrors distribute_leads() (0007). */
 export const isPending = (a: TodayAssignment) =>
-  !a.sent && a.leads?.status === "assigned" && !a.leads.no_whatsapp;
+  !a.sent && a.leads?.status === "assigned" && !a.leads.no_whatsapp && !a.leads.greeted_at;
 
 /** Everything except unsent no-WhatsApp leads uses up the sender's daily limit. */
 export const usesCapacity = (a: TodayAssignment) => a.sent || !a.leads?.no_whatsapp;
@@ -424,6 +426,13 @@ export async function fetchForecast(date: string) {
 /** `today` is the browser's local date so the DB and the UI agree on what "today" is. */
 /** The opening line sent before the clinic's own message. */
 export const GREETING = "السلام عليكم و رحمة الله و بركاته";
+
+/**
+ * The clinic's message without its opening salam line (and the blank lines after it): the
+ * greeting already said «السلام عليكم». Mirrors withoutSalam() in bot/core.mjs.
+ */
+export const withoutSalam = (message: string | null | undefined) =>
+  (message ?? "").replace(/^\s*السلام عليكم[^\n]*\n+/, "").trim();
 
 /** Records that the greeting went out, shown as a mark on the client's card. */
 export async function markGreeted(leadId: string) {
