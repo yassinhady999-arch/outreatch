@@ -2,9 +2,11 @@ import * as XLSX from "xlsx";
 import { normalizePhone, type LeadImportRow } from "@/lib/leads";
 
 const NAME_HEADER = /name|اسم/i;
-const INSTA_HEADER = /insta|انستا|إنستا/i;
+// انستا / انستجرام / إنستغرام…
+const INSTA_HEADER = /insta|[اإ]نست/i;
 const MESSAGE_HEADER = /message|msg|رسال/i;
 const CITY_HEADER = /city|مدين/i;
+const LINK_HEADER = /link|url|رابط/i;
 
 /** Only digits and phone punctuation (spaces, + - ( ) . and bidi marks), 6–15 digits. */
 const isPhone = (v: string) =>
@@ -22,12 +24,15 @@ const isIndex = (v: string) => /^\d{1,5}$/.test(v);
  * column order doesn't matter. Name, Instagram and message come from header keywords when
  * the sheet has a header row, otherwise from content (a message is long or multi-line),
  * falling back to phone/name/instagram order. City and row-number columns are never the name.
+ * `links` holds each cell's hyperlink, for sheets that show a label and keep the URL behind it.
  */
-function parseRows(rows: string[][]): LeadImportRow[] {
+function parseRows(rows: string[][], links: string[][]): LeadImportRow[] {
   const width = Math.max(0, ...rows.map((r) => r.length));
   const cols = [...Array(width).keys()];
   const count = (c: number, test: (v: string) => boolean) =>
     rows.filter((r) => test(r[c] ?? "")).length;
+  const rowIndex = new Map(rows.map((r, i) => [r, i]));
+  const linkAt = (r: string[], c: number) => links[rowIndex.get(r) ?? -1]?.[c] ?? "";
 
   const phoneCol = cols.reduce(
     (best, c) => (count(c, isPhone) > count(best, isPhone) ? c : best),
@@ -49,9 +54,17 @@ function parseRows(rows: string[][]): LeadImportRow[] {
     return filled.length > 0 && filled.filter((r) => test(r[c] ?? "")).length * 2 >= filled.length;
   };
 
-  const messageCol = byHeader(MESSAGE_HEADER) ?? others.find((c) => mostly(c, isLongText));
+  // Several headers can mention «رسالة» (e.g. «رابط واتساب (الرسالة جاهزة)», whose cells are
+  // links labelled «افتح المحادثة»); the message is the column actually holding long text
+  const messageHeaders = header ? others.filter((c) => MESSAGE_HEADER.test(header[c] ?? "")) : [];
+  const messageCol =
+    messageHeaders.find((c) => mostly(c, isLongText)) ??
+    others.find((c) => mostly(c, isLongText)) ??
+    messageHeaders.find((c) => !LINK_HEADER.test(header?.[c] ?? ""));
   const cityCol = byHeader(CITY_HEADER);
-  let instaCol = byHeader(INSTA_HEADER) ?? others.find((c) => count(c, isInstagram) > 0);
+  let instaCol =
+    byHeader(INSTA_HEADER) ??
+    others.find((c) => count(c, isInstagram) > 0 || rows.some((r) => isInstagram(linkAt(r, c))));
   const candidates = others.filter(
     (c) => c !== messageCol && c !== cityCol && c !== instaCol && !mostly(c, isIndex),
   );
@@ -62,14 +75,44 @@ function parseRows(rows: string[][]): LeadImportRow[] {
   if (instaCol === undefined && !header) instaCol = candidates.find((c) => c !== nameCol);
 
   const get = (r: string[], c: number | undefined) => (c === undefined ? "" : (r[c] ?? ""));
+  // A cell can show a label («حساب انستجرام») and keep the real address in its hyperlink;
+  // a label with no link (it has spaces, unlike a handle) is no address at all
+  const instagramOf = (r: string[]) => {
+    if (instaCol === undefined) return "";
+    const link = linkAt(r, instaCol);
+    if (isInstagram(link)) return link;
+    const value = get(r, instaCol);
+    return isInstagram(value) || !/\s/.test(value) ? value : "";
+  };
   return rows
     .filter((r) => r !== header && isPhone(r[phoneCol] ?? ""))
     .map((r) => ({
       phone: get(r, phoneCol),
       name: get(r, nameCol),
-      instagram: get(r, instaCol),
+      instagram: instagramOf(r),
       message: get(r, messageCol),
     }));
+}
+
+/** Every cell's shown value and its hyperlink (if any), row by row. */
+function readSheet(sheet: XLSX.WorkSheet) {
+  const rows: string[][] = [];
+  const links: string[][] = [];
+  const ref = sheet["!ref"];
+  if (!ref) return { rows, links };
+  const range = XLSX.utils.decode_range(ref);
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const row: string[] = [];
+    const rowLinks: string[] = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined;
+      row.push(cell?.v == null ? "" : repairEmoji(String(cell.v).trim()));
+      rowLinks.push(cell?.l?.Target ?? "");
+    }
+    rows.push(row);
+    links.push(rowLinks);
+  }
+  return { rows, links };
 }
 
 /**
@@ -91,10 +134,8 @@ export async function parseLeadsFile(file: File): Promise<LeadImportRow[]> {
   for (const name of wb.SheetNames) {
     const sheet = wb.Sheets[name];
     if (!sheet) continue;
-    const rows = XLSX.utils
-      .sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" })
-      .map((r) => r.map((v) => (v == null ? "" : repairEmoji(String(v).trim()))));
-    const leads = parseRows(rows);
+    const { rows, links } = readSheet(sheet);
+    const leads = parseRows(rows, links);
     if (leads.length > 0) return leads;
   }
   return [];
