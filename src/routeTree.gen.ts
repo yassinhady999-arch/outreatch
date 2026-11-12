@@ -16,6 +16,7 @@ import { Route as AuthenticatedClientsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedLogRouteImport } from './routes/_authenticated/log'
 import { Route as AuthenticatedSendersRouteImport } from './routes/_authenticated/senders'
 import { Route as AuthenticatedTodayRouteImport } from './routes/_authenticated/today'
+import { Route as AuthenticatedWaTestRouteImport } from './routes/_authenticated/wa-test'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -51,6 +52,11 @@ const AuthenticatedTodayRoute = AuthenticatedTodayRouteImport.update({
   path: '/today',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedWaTestRoute = AuthenticatedWaTestRouteImport.update({
+  id: '/wa-test',
+  path: '/wa-test',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/log': typeof AuthenticatedLogRoute
   '/senders': typeof AuthenticatedSendersRoute
   '/today': typeof AuthenticatedTodayRoute
+  '/wa-test': typeof AuthenticatedWaTestRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/log': typeof AuthenticatedLogRoute
   '/senders': typeof AuthenticatedSendersRoute
   '/today': typeof AuthenticatedTodayRoute
+  '/wa-test': typeof AuthenticatedWaTestRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -77,12 +85,14 @@ export interface FileRoutesById {
   '/_authenticated/log': typeof AuthenticatedLogRoute
   '/_authenticated/senders': typeof AuthenticatedSendersRoute
   '/_authenticated/today': typeof AuthenticatedTodayRoute
+  '/_authenticated/wa-test': typeof AuthenticatedWaTestRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/clients' | '/log' | '/senders' | '/today'
+  fullPaths:
+    '/' | '/auth' | '/clients' | '/log' | '/senders' | '/today' | '/wa-test'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/clients' | '/log' | '/senders' | '/today'
+  to: '/' | '/auth' | '/clients' | '/log' | '/senders' | '/today' | '/wa-test'
   id:
     | '__root__'
     | '/'
@@ -92,6 +102,7 @@ export interface FileRouteTypes {
     | '/_authenticated/log'
     | '/_authenticated/senders'
     | '/_authenticated/today'
+    | '/_authenticated/wa-test'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -151,6 +162,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedTodayRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/wa-test': {
+      id: '/_authenticated/wa-test'
+      path: '/wa-test'
+      fullPath: '/wa-test'
+      preLoaderRoute: typeof AuthenticatedWaTestRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -159,6 +177,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedLogRoute: typeof AuthenticatedLogRoute
   AuthenticatedSendersRoute: typeof AuthenticatedSendersRoute
   AuthenticatedTodayRoute: typeof AuthenticatedTodayRoute
+  AuthenticatedWaTestRoute: typeof AuthenticatedWaTestRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -166,6 +185,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedLogRoute: AuthenticatedLogRoute,
   AuthenticatedSendersRoute: AuthenticatedSendersRoute,
   AuthenticatedTodayRoute: AuthenticatedTodayRoute,
+  AuthenticatedWaTestRoute: AuthenticatedWaTestRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

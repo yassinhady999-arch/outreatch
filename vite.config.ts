@@ -12,4 +12,7 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Hosted on Cloudflare Pages (https://mersal-887.pages.dev); `npm run deploy` builds and uploads.
+  // Inside Lovable's own build this is overridden with its Cloudflare target.
+  nitro: { preset: "cloudflare-pages" },
 });

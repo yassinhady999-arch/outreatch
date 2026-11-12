@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "deploy": "vite build && npx wrangler pages deploy dist --project-name mersal --branch main --commit-dirty=true",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

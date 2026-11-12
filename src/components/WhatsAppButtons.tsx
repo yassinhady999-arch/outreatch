@@ -27,9 +27,10 @@ async function copyText(text: string) {
 
 /**
  * Opens the WhatsApp app on this number with `text` typed in, ready to send. Phones get
- * WhatsApp's official click-to-chat link (wa.me), which keeps the text; some phones open the
- * unofficial whatsapp:// link without it. Computers keep whatsapp:// (straight into the
- * desktop app). Both links are rendered and CSS shows the one for the device.
+ * WhatsApp's click-to-chat link on api.whatsapp.com directly: the wa.me short link redirects
+ * there, and that redirect can mangle 4-byte emoji (🙏), which made Android open the chat
+ * empty. Computers keep whatsapp:// (straight into the desktop app). Both links are
+ * rendered and CSS shows the one for the device.
  */
 function AppLink({
   number,
@@ -50,7 +51,7 @@ function AppLink({
   return (
     <>
       <a
-        href={`https://wa.me/${number}${encoded ? `?text=${encoded}` : ""}`}
+        href={`https://api.whatsapp.com/send?phone=${number}${encoded ? `&text=${encoded}` : ""}`}
         target="_blank"
         rel="noopener noreferrer"
         onClick={onClick}
@@ -107,6 +108,20 @@ export function WhatsAppButtons({
     }
   };
 
+  // Same tap also copies the message, so if WhatsApp ever opens the chat empty
+  // it's one long-press → Paste away (no separate copy button needed)
+  const open = () => {
+    if (message) {
+      void copyText(message).then((ok) => {
+        if (ok)
+          toast.info(
+            "الرسالة اتنسخت كمان — لو ما ظهرتش في واتساب، اضغط مطوّلًا على خانة الكتابة واختار «لصق»",
+          );
+      });
+    }
+    onOpen?.();
+  };
+
   return (
     <span className="flex shrink-0 flex-wrap items-center gap-1">
       {onGreet ? (
@@ -141,7 +156,7 @@ export function WhatsAppButtons({
       <AppLink
         number={n}
         text={message}
-        onClick={onOpen}
+        onClick={open}
         title="فتح المحادثة في تطبيق واتساب"
         className={green}
       >
@@ -151,7 +166,7 @@ export function WhatsAppButtons({
       <a
         href={`https://web.whatsapp.com/send?phone=${n}${text}`}
         target="whatsapp-web"
-        onClick={onOpen}
+        onClick={open}
         title="فتح المحادثة في واتساب ويب"
         className={`${green} pointer-coarse:hidden`}
       >
