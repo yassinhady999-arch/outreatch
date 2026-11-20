@@ -63,27 +63,163 @@ export function waitingForGreeting(assignments) {
     .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
 }
 
-/**
- * What to do when someone writes in. The clinic's own message goes out once: only to a lead
- * that got the greeting and whose assignment isn't marked sent yet.
- */
-export function replyAction(lead, assignment) {
-  if (!lead || !lead.greeted_at) return "ignore"; // not one of ours, or never greeted
-  if (!assignment || assignment.sent) return "ignore"; // message already went out
-  if (!lead.message || !lead.message.trim()) return "no-message";
-  return "send-message";
-}
-
 export const randomBetween = (min, max) => min + Math.random() * (max - min);
 
+/* ---------- the conversation after the greeting (texts in script.mjs) ---------- */
+
+// Messages written by the import tool name the clinic and its city:
+// «… لعيادات الأسنان في الرياض عن طريق …» and «… لزيادة المرضى في عيادة د. وائل، وحاب …»
+const CITY_IN_MESSAGE = /لعيادات الأسنان في (.+?) عن طريق/;
+const NAME_IN_MESSAGE = /لزيادة المرضى في (.+?)،/;
+
 /**
- * The clinic's message without its opening salam line (and the blank lines after it): the
- * greeting already said «السلام عليكم». Mirrors withoutSalam() in src/lib/leads.ts.
+ * The clinic's name for the script: the business name its own WhatsApp account shows
+ * (`waName`, when it has one — a list can pair a number with the wrong clinic), else the
+ * Arabic one from its message, else the saved name.
  */
-export const withoutSalam = (message) =>
-  String(message ?? "")
-    .replace(/^\s*السلام عليكم[^\n]*\n+/, "")
+export function clinicName(lead, waName) {
+  return (
+    waName?.trim() ||
+    lead?.message?.match(NAME_IN_MESSAGE)?.[1]?.trim() ||
+    lead?.name?.trim() ||
+    "العيادة"
+  );
+}
+
+/** The clinic's city: the saved one, else the one its message names, else "". */
+export function clinicCity(lead) {
+  return lead?.city?.trim() || lead?.message?.match(CITY_IN_MESSAGE)?.[1]?.trim() || "";
+}
+
+/** "[ في {city}]" keeps its text only when every placeholder inside has a value. */
+export function fillTemplate(template, values) {
+  const fill = (s) => s.replace(/\{(\w+)\}/g, (_, k) => values[k] ?? "");
+  return template
+    .replace(/\[([^\]]*)\]/g, (_, part) =>
+      [...part.matchAll(/\{(\w+)\}/g)].every(([, k]) => values[k]) ? fill(part) : "",
+    )
+    .replace(/\{(\w+)\}/g, (_, k) => values[k] ?? "");
+}
+
+const EMOJI = /\p{Extended_Pictographic}/gu;
+const EMOJI_JOINERS = new RegExp(`[${String.fromCharCode(0xfe0f)}${String.fromCharCode(0x200d)}]`, "g");
+
+/**
+ * What the bot sends has no emoji, periods, commas or colons (the owner's style), not even
+ * inside a clinic's name («عيادة د. وائل» → «عيادة د وائل»). Line breaks stay.
+ */
+export const cleanText = (text) =>
+  String(text)
+    .replace(EMOJI, " ")
+    .replace(EMOJI_JOINERS, "")
+    .replace(/[.,،؛:]/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ +([؟?!])/g, "$1") // «Dr Smile 🦷؟» → «Dr Smile؟», not «Dr Smile ؟»
+    .replace(/ *\n */g, "\n")
     .trim();
+
+/**
+ * Message number `step` (1 = the first after the greeting) for this clinic, or null.
+ * `waName`: the business name on the clinic's WhatsApp, if known.
+ */
+export function scriptMessage(script, step, lead, waName) {
+  const template = script[step - 1];
+  if (!template) return null;
+  return cleanText(fillTemplate(template, { name: clinicName(lead, waName), city: clinicCity(lead) }));
+}
+
+const TASHKEEL = new RegExp(`[${String.fromCharCode(0x64b)}-${String.fromCharCode(0x652)}${String.fromCharCode(0x640)}]`, "g");
+
+/** Arabic text without diacritics/tatweel and with plain alef, so patterns stay simple. */
+const plain = (text) =>
+  String(text ?? "")
+    .replace(TASHKEEL, "")
+    .replace(/[أإآ]/g, "ا")
+    .toLowerCase();
+
+/** Seconds: a reply this fast after our message came from an auto-reply, not a person. */
+export const AUTO_REPLY_SECONDS = 8;
+
+// Phrases only automatic replies use
+const AUTO_ALWAYS =
+  /(رد\s*(الي|تلقائي)|رساله\s*(اليه|تلقائيه)|رسالة\s*(الية|تلقائية)|سيتم\s*(الرد|التواصل)|سنقوم\s*بالرد|سنرد|سوف\s*(نرد|يتم)|خارج\s*(اوقات|ساعات)|شكرا\s*(لك|لكم)?\s*(علي|على|ل)\s*(تواصل|التواصل|مراسلت)|لتواصلك|لتواصلكم|thanks? (you )?for (contacting|reaching|your message)|we will (get back|reply|respond)|auto-?reply|automatic reply|out of office)/;
+// Words a long welcome/menu message has; a person's reply to a salam is short
+const AUTO_LONG =
+  /(اهلا|مرحب|نرحب|يسعدنا|نسعد|اوقات العمل|ساعات العمل|اوقات الدوام|للحجز|لحجز|الحجز|عروض|موقعنا|لوكيشن|https?:\/\/|wa\.me|instagram\.com)/;
+
+/**
+ * A WhatsApp Business auto-reply («شكرًا لتواصلك…», a welcome menu) rather than a person.
+ * `secondsAfterOurs`: how long after our last message it arrived (null if unknown).
+ */
+export function isAutoReply(text, secondsAfterOurs) {
+  if (secondsAfterOurs != null && secondsAfterOurs >= 0 && secondsAfterOurs < AUTO_REPLY_SECONDS) {
+    return true;
+  }
+  const t = plain(text);
+  return AUTO_ALWAYS.test(t) || (t.length >= 80 && AUTO_LONG.test(t));
+}
+
+// «مو مهتمين», «لا شكرا», «ما نحتاج», «نعتذر»… but not «لا ما عندي مانع» / «ما نمانع»
+const REFUSAL =
+  /((^|\s)(مو|مش|غير|ما|مب|ماني|لسنا|لا)\s*(مهتم|محتاج|نحتاج|احتاج|نبي|ابي|نبغي|نبغى|ابغي|ابغى|نرغب|ارغب)|مانحتاج|مانبي|مانبغى|مانبغي|لا\s*شكرا|لا\s*مشكور|لا\s*الله\s*يعافيك|نعتذر|اعتذر|لا\s*ترسل|لا\s*تراسل|(ارجو|الرجاء|نرجو)\s*عدم|عندنا\s*(شركه|شركة|مسوق|فريق)|متعاقدين|not interested|no thanks|unsubscribe)/;
+
+/** The clinic says no: the bot stops and marks it «غير مهتم». */
+export const isRefusal = (text) => REFUSAL.test(plain(text));
+
+/**
+ * What to do with a message from a lead, given how many messages the script has:
+ * "ignore" (not greeted by us, or already said no), "auto" (an auto-reply: wait for a real
+ * one), "refusal", "after-script" (answered the last script message: a person takes over),
+ * or "reply" (send the next script message).
+ */
+export function incomingAction(lead, text, secondsAfterOurs, scriptLength) {
+  if (!lead || !lead.greeted_at || lead.status === "not_interested") return "ignore";
+  if (isAutoReply(text, secondsAfterOurs)) return "auto";
+  if (isRefusal(text)) return "refusal";
+  if ((lead.step ?? 0) >= scriptLength) return "after-script";
+  return "reply";
+}
+
+/** `step` of a clinic you're talking to yourself: the bot sends it nothing more. */
+export const TAKEN_OVER = 99;
+
+/**
+ * A message you sent yourself (phone or WhatsApp Web) to a lead: "greeting" (the site's
+ * «التحية» button or a typed salam — the bot carries on from there), "takeover" (anything
+ * else: you're handling this clinic, so no script and no follow-up) or "ignore".
+ */
+export function manualMessageAction(lead, text) {
+  if (!lead) return "ignore";
+  const words = cleanText(plain(text)).replace(/\s+/g, "");
+  if (words.startsWith("السلامعليكم") && words.length <= 40) return "greeting";
+  if ((lead.step ?? 0) >= TAKEN_OVER) return "ignore"; // already yours
+  return "takeover";
+}
+
+/** The text of an incoming message: "" for a reply without text (voice note, sticker…), null for none. */
+export function messageText(content) {
+  if (!content) return null;
+  const text =
+    content.conversation ??
+    content.extendedTextMessage?.text ??
+    content.imageMessage?.caption ??
+    content.videoMessage?.caption ??
+    content.documentMessage?.caption;
+  if (typeof text === "string") return text;
+  if (content.reactionMessage) return content.reactionMessage.text || null; // removed reaction: none
+  const kinds = Object.keys(content).filter(
+    (k) => k !== "messageContextInfo" && k !== "senderKeyDistributionMessage",
+  );
+  if (kinds.length === 0 || kinds.includes("protocolMessage")) return null;
+  return "";
+}
+
+/** "16-21" → { from: 16, to: 21 } */
+export function parseHours(text) {
+  const m = String(text).trim().match(/^(\d{1,2})-(\d{1,2})$/);
+  if (!m) throw new Error(`مواعيد غلط "${text}" — المفروض زي 16-21`);
+  return { from: Number(m[1]), to: Number(m[2]) };
+}
 
 /** 5 greetings 9–12, 5 in 12–15, 5 in 15–19, 5 in 19–21 (hours on this computer's clock). */
 export const DEFAULT_SCHEDULE = "9-12:5,12-15:5,15-19:5,19-21:5";
@@ -109,10 +245,11 @@ const atHour = (day, hour) => {
 /**
  * When the next greeting may go out. Each window sends at most its count, greetings are at
  * least `gapMinutes` apart, and nothing goes out between windows. `assignments` are today's
- * assignments of this sender (sent or not), with their leads.
+ * assignments of this sender (sent or not), with their leads. `lastOther`: when another
+ * unprompted message (a follow-up) went out, which also needs the gap before the next one.
  * Returns { send: assignment } or { waitUntil: Date, reason }.
  */
-export function planNextGreeting(now, schedule, assignments, gapMinutes) {
+export function planNextGreeting(now, schedule, assignments, gapMinutes, lastOther = null) {
   const hour = now.getHours();
   const win = schedule.find((w) => hour >= w.from && hour < w.to);
   if (!win) {
@@ -134,7 +271,7 @@ export function planNextGreeting(now, schedule, assignments, gapMinutes) {
     return { waitUntil: end, reason: "window-full" };
   }
 
-  const last = greetedToday.reduce((max, d) => (!max || d > max ? d : max), null);
+  const last = [...greetedToday, lastOther].reduce((max, d) => (d && (!max || d > max) ? d : max), null);
   if (last) {
     const ready = new Date(last.getTime() + gapMinutes * 60_000);
     if (ready > now) return { waitUntil: ready, reason: "gap" };

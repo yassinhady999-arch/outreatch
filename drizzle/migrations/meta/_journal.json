@@ -64,6 +64,20 @@
       "when": 1794496677112,
       "tag": "0008_wa_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794671395023,
+      "tag": "0009_conversation_script",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795160146734,
+      "tag": "0010_replied_at",
+      "breakpoints": true
     }
   ]
 }

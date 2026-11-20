@@ -251,14 +251,21 @@ export async function addLead(input: {
   return { noWhatsapp };
 }
 
-export type LeadImportRow = { phone: string; name: string; instagram: string; message: string };
+export type LeadImportRow = {
+  phone: string;
+  name: string;
+  instagram: string;
+  message: string;
+  /** optional: files without a city column */
+  city?: string;
+};
 
-type SavedLead = Pick<Lead, "id" | "phone" | "name" | "instagram" | "message">;
-type LeadPatch = { message?: string; name?: string; instagram?: string };
+type SavedLead = Pick<Lead, "id" | "phone" | "name" | "instagram" | "message" | "city">;
+type LeadPatch = { message?: string; name?: string; instagram?: string; city?: string };
 
 /**
  * For numbers that were already saved: the file's message wins (it's the newest version),
- * and a missing name / Instagram gets filled in. Nothing else (category, status, WhatsApp
+ * and a missing name / Instagram / city gets filled in. Nothing else (category, status, WhatsApp
  * flag) is touched. Returns only the leads that actually change.
  */
 export function enrichmentPatches(saved: SavedLead[], rows: LeadImportRow[]) {
@@ -271,6 +278,7 @@ export function enrichmentPatches(saved: SavedLead[], rows: LeadImportRow[]) {
     if (message && message !== lead.message) patch.message = message;
     if (!lead.name && row.name.trim()) patch.name = row.name.trim();
     if (!lead.instagram && row.instagram.trim()) patch.instagram = row.instagram.trim();
+    if (!lead.city && row.city?.trim()) patch.city = row.city.trim();
     return Object.keys(patch).length > 0 ? [{ id: lead.id, patch }] : [];
   });
 }
@@ -299,6 +307,7 @@ export async function addLeadsBulk(rows: LeadImportRow[], categoryId: string | n
           no_whatsapp: isMobileNumber(r.phone) === false,
           ...(categoryId ? { category_id: categoryId } : {}),
           ...(r.message.trim() ? { message: r.message.trim() } : {}),
+          ...(r.city?.trim() ? { city: r.city.trim() } : {}),
         })),
         { onConflict: "user_id,phone", ignoreDuplicates: true },
       )
@@ -318,7 +327,7 @@ export async function addLeadsBulk(rows: LeadImportRow[], categoryId: string | n
     const chunk = existing.slice(i, i + 200);
     const { data: saved, error } = await supabase
       .from("leads")
-      .select("id, phone, name, instagram, message")
+      .select("id, phone, name, instagram, message, city")
       .in(
         "phone",
         chunk.map((r) => r.phone),

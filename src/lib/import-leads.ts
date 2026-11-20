@@ -91,6 +91,7 @@ function parseRows(rows: string[][], links: string[][]): LeadImportRow[] {
       name: get(r, nameCol),
       instagram: instagramOf(r),
       message: get(r, messageCol),
+      city: get(r, cityCol),
     }));
 }
 

@@ -88,6 +88,12 @@ export type Database = {
       }
       leads: {
         Row: {
+          city: string | null
+          followed_up_at: string | null
+          last_out_at: string | null
+          replied_at: string | null
+          reply_pending_at: string | null
+          step: number
           category_id: string | null
           country: string | null
           created_at: string
@@ -103,6 +109,12 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          city?: string | null
+          followed_up_at?: string | null
+          last_out_at?: string | null
+          replied_at?: string | null
+          reply_pending_at?: string | null
+          step?: number
           category_id?: string | null
           country?: string | null
           created_at?: string
@@ -118,6 +130,12 @@ export type Database = {
           user_id?: string
         }
         Update: {
+          city?: string | null
+          followed_up_at?: string | null
+          last_out_at?: string | null
+          replied_at?: string | null
+          reply_pending_at?: string | null
+          step?: number
           category_id?: string | null
           country?: string | null
           created_at?: string

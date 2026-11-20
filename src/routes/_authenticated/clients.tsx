@@ -113,7 +113,7 @@ function ClientsPage() {
     onError: (err) =>
       toast.error(
         err instanceof Error && err.message === "MIGRATION"
-          ? "قاعدة البيانات محتاجة تحديث — شغّل ملف 0005_categories_and_messages.sql في Supabase"
+          ? "قاعدة البيانات محتاجة تحديث — شغّل ملفات drizzle/migrations الناقصة في Supabase (آخرها 0009_conversation_script.sql)"
           : "تعذّر قراءة الملف — تأكد أنه ملف إكسل أو CSV",
       ),
   });
