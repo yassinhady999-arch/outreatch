@@ -202,11 +202,19 @@ function AnalyticsPage() {
             </Card>
           </div>
 
-          <Card title="رسالة المتابعة" subtitle="«مساء الخير بس أتأكد إن رسالتي وصلت» — للي ما ردّوش على التحية 24 ساعة">
-            <MeterList
-              rows={[{ key: "fu", label: "ردّوا بعد المتابعة", messaged: a.followUps.sent, replied: a.followUps.replied }]}
-            />
-          </Card>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card
+              title="سرعة الرد"
+              subtitle={`من وقت التحية لأول رد حقيقي — من ${n(a.replyTimes)} رد اتسجّل وقته`}
+            >
+              <MeterList rows={a.replySpeed} />
+            </Card>
+            <Card title="رسالة المتابعة" subtitle="«مساء الخير بس أتأكد إن رسالتي وصلت» — للي ما ردّوش على التحية 24 ساعة">
+              <MeterList
+                rows={[{ key: "fu", label: "ردّوا بعد المتابعة", messaged: a.followUps.sent, replied: a.followUps.replied }]}
+              />
+            </Card>
+          </div>
         </div>
       )}
     </AppShell>

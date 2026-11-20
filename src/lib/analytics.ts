@@ -174,6 +174,19 @@ export function buildAnalytics(
     );
   }
 
+  // How fast: of the replies with a known time, the share within each limit (cumulative)
+  const replySpeed: Row[] = [
+    { key: "15m", label: "خلال 15 دقيقة", limit: 15 },
+    { key: "1h", label: "خلال ساعة", limit: 60 },
+    { key: "3h", label: "خلال 3 ساعات", limit: 180 },
+    { key: "1d", label: "خلال يوم", limit: 24 * 60 },
+  ].map(({ key, label, limit }) => ({
+    key,
+    label,
+    messaged: replyMinutes.length,
+    replied: replyMinutes.filter((x) => x <= limit).length,
+  }));
+
   const followedUp = messaged.filter((m) => m.lead.followed_up_at);
 
   return {
@@ -187,6 +200,7 @@ export function buildAnalytics(
     legacyReplied: replied.filter((m) => m.lead.status === "replied" && m.lead.step === 3).length,
     medianReplyMinutes: median(replyMinutes),
     replyTimes: replyMinutes.length,
+    replySpeed,
     followUps: { sent: followedUp.length, replied: followedUp.filter((m) => hasReplied(m.lead)).length },
     /** clinics in scope not written to yet, and those flagged «بدون واتساب» */
     notYet: scoped.filter((l) => !messagedAt(l, byLead.get(l.id)) && !l.no_whatsapp).length,
