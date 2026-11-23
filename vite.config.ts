@@ -6,6 +6,11 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+// A fixed Workers compatibility date (a nitro option the Lovable config's type doesn't list):
+// left out, it is the build machine's local date, which Cloudflare (on UTC) rejects as "in the
+// future" after midnight in Egypt.
+const nitro = { preset: "cloudflare-pages", compatibilityDate: "2026-11-20" };
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
@@ -14,5 +19,5 @@ export default defineConfig({
   },
   // Hosted on Cloudflare Pages (https://mersal-887.pages.dev); `npm run deploy` builds and uploads.
   // Inside Lovable's own build this is overridden with its Cloudflare target.
-  nitro: { preset: "cloudflare-pages" },
+  nitro,
 });
