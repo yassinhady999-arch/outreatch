@@ -1,6 +1,7 @@
 // Mersal bot: links one WhatsApp number (QR, like WhatsApp Web), greets today's assigned
 // clinics on its own, then holds the conversation in script.mjs: each real reply from a
-// clinic gets the next message, and a clinic that never answers gets one follow-up.
+// clinic gets the next message, and a clinic that never answers gets one follow-up. Every
+// message of a clinic's chat (the bot's, yours and theirs) is kept in the table «messages».
 // Usage: node --env-file=.env index.mjs [sessionName]   (one session per sending number)
 import fs from "node:fs";
 import http from "node:http";
@@ -23,11 +24,15 @@ import QRCode from "qrcode";
 import qrTerminal from "qrcode-terminal";
 import { useSupabaseAuthState } from "./auth-store.mjs";
 import {
+  botAuthored,
   cleanText,
   DEFAULT_SCHEDULE,
   GREETING,
   incomingAction,
+  isAutoReply,
+  managerPhoneIn,
   manualMessageAction,
+  messageInfo,
   messageText,
   parseHours,
   parseSchedule,
@@ -141,6 +146,20 @@ async function leadForPhone(pnJid) {
     .limit(1);
   if (error) throw error;
   return data[0] ?? null;
+}
+
+/**
+ * The clinic whose management number this chat is (the number it sent, page «الردود»). Only
+ * for the record: the script is for the clinic's own chat. null before the SQL of
+ * 0011_conversations.sql ran (no such column yet).
+ */
+async function leadForManager(pnJid) {
+  const { data, error } = await db
+    .from("leads")
+    .select(LEAD_FIELDS)
+    .in("manager_phone", phoneCandidates(pnJid))
+    .limit(1);
+  return error ? null : (data[0] ?? null);
 }
 
 /** Replies waiting at least REPLY_DELAY minutes for this number's next script message. */
@@ -272,6 +291,11 @@ async function connect() {
       else if (!botSent.has(m.key.id)) onManual(m, jid).catch((e) => log("خطأ:", e.message));
     }
   });
+
+  // Old messages the phone sends on request (askOlderMessages), or when a number is linked
+  sock.ev.on("messaging-history.set", ({ messages }) => {
+    saveHistory(messages ?? []).catch((e) => log("خطأ وأنا بحفظ المحادثة القديمة:", e.message));
+  });
 }
 
 const who = (lead) => lead.name || lead.phone;
@@ -282,8 +306,8 @@ const botSent = new Set();
 // lead id → the business name its WhatsApp account showed on its last message
 const waNames = new Map();
 
-/** "Typing…" for a few seconds first, like a person, then the message. */
-async function typeAndSend(jid, text) {
+/** "Typing…" for a few seconds first, like a person, then the message (kept in the clinic's record). */
+async function typeAndSend(jid, text, lead) {
   try {
     await sock.sendPresenceUpdate("composing", jid);
     await sleep(randomBetween(3, 7) * 1000);
@@ -293,6 +317,15 @@ async function typeAndSend(jid, text) {
   botSent.add(messageId);
   if (botSent.size > 2000) botSent.delete(botSent.values().next().value);
   await sock.sendMessage(jid, { text }, { messageId });
+  if (lead) {
+    await saveMessage(lead, phoneToJid(lead.phone), {
+      wa_id: messageId,
+      author: "bot",
+      kind: "text",
+      body: text,
+      sent_at: new Date().toISOString(),
+    });
+  }
 }
 
 /** The phone-number id of a chat (chats can be addressed by a hidden id, a LID). */
@@ -302,17 +335,152 @@ async function phoneJidOf(m, jid) {
     : jid;
 }
 
+/* ---------- the conversation record (table messages, page «الردود») ---------- */
+
+// The table is new (drizzle/migrations/0011_conversations.sql): until its SQL ran in Supabase the
+// bot keeps working as before and says so in the log every half hour
+let recordWarnedAt = 0;
+function recordFailed(error) {
+  if (Date.now() - recordWarnedAt < 30 * 60_000) return;
+  recordWarnedAt = Date.now();
+  log(
+    `⚠️ المحادثات مش بتتحفظ (${error?.message ?? error}) — شغّل كود drizzle/migrations/0011_conversations.sql في Supabase (SQL Editor)`,
+  );
+}
+
+/** Seconds of a WhatsApp timestamp (a number or a protobuf Long). */
+const seconds = (t) => (t && typeof t === "object" ? (t.toNumber?.() ?? t.low ?? 0) : Number(t) || 0);
+const sentAtOf = (m) => new Date(seconds(m.messageTimestamp) * 1000 || Date.now()).toISOString();
+const chatPhone = (pnJid) => `+${String(pnJid).split("@")[0].split(":")[0]}`;
+
+/** Keeps one message of a lead's chat. The same message twice (same WhatsApp id) is saved once. */
+async function saveMessage(lead, pnJid, row) {
+  try {
+    const { error } = await db.from("messages").insert({
+      lead_id: lead.id,
+      sender_id: sender?.id ?? null,
+      chat_phone: chatPhone(pnJid),
+      auto: false,
+      ...row,
+      body: String(row.body ?? "").slice(0, 4000),
+    });
+    if (error && error.code !== "23505") recordFailed(error);
+    return !error;
+  } catch (e) {
+    recordFailed(e);
+    return false;
+  }
+}
+
+/** Numbers that are never the management's: the clinic's own and this sending number. */
+const ownNumbers = (lead) => [
+  lead.phone,
+  sender?.phone,
+  sock?.user?.id ? jidNormalizedUser(sock.user.id).split("@")[0] : null,
+];
+
+/**
+ * A number in the clinic's answer after the bot asked for the management's (step ≥ 1) becomes
+ * its «رقم الإدارة». `onlyIfEmpty`: from an old message, which never replaces a newer one.
+ */
+async function captureManagerPhone(lead, info, onlyIfEmpty = false) {
+  const phone = managerPhoneIn(info, ownNumbers(lead));
+  if (!phone) return;
+  let q = db
+    .from("leads")
+    .update({ manager_phone: phone, manager_phone_at: new Date().toISOString() })
+    .eq("id", lead.id);
+  if (onlyIfEmpty) q = q.is("manager_phone", null);
+  const { error } = await q;
+  if (error) return recordFailed(error);
+  log(`📇 ${who(lead)} بعتت رقم الإدارة ${phone} — اتسجّل في صفحة «الردود»`);
+}
+
+// The bot's own texts, to tell its old messages from yours in the phone's history
+const BOT_TEXTS = [GREETING, ...SCRIPT, FOLLOW_UP];
+
+/**
+ * The first time a clinic's chat moves in this run, its older messages (from before the record
+ * existed) are asked from the phone: up to 50, one chat every 10 seconds. They come back as
+ * «messaging-history.set» (saveHistory).
+ */
+const askedHistory = new Set();
+let historyQueue = Promise.resolve();
+function askOlderMessages(lead, m) {
+  const chat = m.key?.remoteJid;
+  if (!chat || askedHistory.has(chat) || askedHistory.size >= 2000) return;
+  askedHistory.add(chat);
+  historyQueue = historyQueue.then(async () => {
+    try {
+      const { count, error } = await db
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("lead_id", lead.id)
+        .lt("sent_at", sentAtOf(m));
+      // no table yet (the count comes back empty), or the older messages are already kept
+      if (error || count === null || count > 0) return;
+      await sock.fetchMessageHistory(50, m.key, seconds(m.messageTimestamp) * 1000);
+      log(`📜 طلبت المحادثة القديمة مع ${who(lead)} من الموبايل`);
+      await sleep(10_000);
+    } catch (e) {
+      log("تعذّر طلب المحادثة القديمة:", e.message);
+    }
+  });
+}
+
+/** Old messages from the phone: those of clients' chats are kept, with any management number in them. */
+async function saveHistory(messages) {
+  const chats = new Map(); // chat id → { lead, pnJid, own } | null
+  const latestNumber = new Map(); // lead id → its newest old message with a number
+  let saved = 0;
+  for (const m of messages) {
+    const jid = m.key?.remoteJid;
+    if (!jid || !m.key.id || !(jid.endsWith("@s.whatsapp.net") || isLidUser(jid))) continue;
+    const info = messageInfo(normalizeMessageContent(m.message));
+    if (!info) continue;
+    if (!chats.has(jid)) {
+      const pnJid = await phoneJidOf(m, jid).catch(() => null);
+      const own = pnJid ? await leadForPhone(pnJid).catch(() => null) : null;
+      const lead = own ?? (pnJid ? await leadForManager(pnJid) : null);
+      chats.set(jid, lead ? { lead, pnJid, own: !!own } : null);
+    }
+    const chat = chats.get(jid);
+    if (!chat) continue;
+    const fromMe = !!m.key.fromMe;
+    const auto = !fromMe && isAutoReply(info.body, null);
+    const at = sentAtOf(m);
+    const author = fromMe ? (botAuthored(info.body, BOT_TEXTS) ? "bot" : "me") : "clinic";
+    const row = { wa_id: m.key.id, author, kind: info.kind, body: info.body, auto, sent_at: at };
+    if (await saveMessage(chat.lead, chat.pnJid, row)) saved++;
+    const asked = (chat.lead.step ?? 0) >= 1;
+    if (!fromMe && !auto && chat.own && asked && managerPhoneIn(info, ownNumbers(chat.lead))) {
+      const prev = latestNumber.get(chat.lead.id);
+      if (!prev || at > prev.at) latestNumber.set(chat.lead.id, { lead: chat.lead, info, at });
+    }
+  }
+  for (const { lead, info } of latestNumber.values()) await captureManagerPhone(lead, info, true);
+  if (saved) log(`📜 اتحفظ ${saved} رسالة قديمة من محادثات العملاء`);
+}
+
 /**
  * A message you wrote yourself to a clinic (phone, WhatsApp Web, the site's buttons). After
  * the greeting the bot carries on; anything else means you're handling it: no script and
  * no follow-up from the bot, and its replies get «متابعة».
  */
 async function onManual(m, jid) {
-  const text = messageText(normalizeMessageContent(m.message));
+  const content = normalizeMessageContent(m.message);
+  const text = messageText(content);
   if (text === null) return;
   const pnJid = await phoneJidOf(m, jid);
   if (!pnJid) return;
   const lead = await leadForPhone(pnJid);
+  // Kept in the record: your message to the clinic, or to the management number it gave
+  const owner = lead ?? (await leadForManager(pnJid));
+  const info = messageInfo(content);
+  if (owner && info) {
+    await saveMessage(owner, pnJid, { wa_id: m.key.id, author: "me", kind: info.kind, body: info.body, sent_at: sentAtOf(m) });
+    askOlderMessages(owner, m);
+  }
   const action = manualMessageAction(lead, text);
   if (action === "ignore") return;
   const at = new Date(Number(m.messageTimestamp) * 1000 || Date.now()).toISOString();
@@ -328,19 +496,34 @@ async function onManual(m, jid) {
  * later (replyLoop sends it; noted in the database so a restart doesn't lose it).
  */
 async function onIncoming(m, jid) {
-  const text = messageText(normalizeMessageContent(m.message));
+  const content = normalizeMessageContent(m.message);
+  const text = messageText(content);
   if (text === null) return; // not a message (a removed reaction, a protocol notice…)
   const pnJid = await phoneJidOf(m, jid);
   if (!pnJid) return;
   const lead = await leadForPhone(pnJid);
   if (lead && m.verifiedBizName) waNames.set(lead.id, m.verifiedBizName);
   const ourLast = lead?.last_out_at ?? lead?.greeted_at;
-  const at = Number(m.messageTimestamp) * 1000 || Date.now();
-  const seconds = ourLast ? (at - new Date(ourLast).getTime()) / 1000 : null;
+  const at = seconds(m.messageTimestamp) * 1000 || Date.now();
+  const secondsAfterOurs = ourLast ? (at - new Date(ourLast).getTime()) / 1000 : null;
   // The first real answer (not an auto-reply), for the analytics page's response time
   const firstReply = lead && !lead.replied_at ? { replied_at: new Date(at).toISOString() } : {};
 
-  switch (incomingAction(lead, text, seconds, SCRIPT.length)) {
+  // Kept in the record: the clinic's message, or one from the management number it gave
+  const owner = lead ?? (await leadForManager(pnJid));
+  const info = messageInfo(content);
+  const auto = !!lead && isAutoReply(text, secondsAfterOurs);
+  if (owner && info) {
+    const row = { wa_id: m.key.id, author: "clinic", kind: info.kind, body: info.body, auto, sent_at: new Date(at).toISOString() };
+    await saveMessage(owner, pnJid, row);
+    askOlderMessages(owner, m);
+  }
+  // A number in its answer to «may I have the management's number» is that number
+  if (lead && info && !auto && lead.greeted_at && (lead.step ?? 0) >= 1 && lead.status !== "not_interested") {
+    await captureManagerPhone(lead, info);
+  }
+
+  switch (incomingAction(lead, text, secondsAfterOurs, SCRIPT.length)) {
     case "ignore":
       return;
     case "auto":
@@ -380,7 +563,7 @@ async function sendNextStep(lead) {
     await db.from("leads").update({ reply_pending_at: null }).eq("id", lead.id);
     return;
   }
-  await typeAndSend(phoneToJid(lead.phone), text);
+  await typeAndSend(phoneToJid(lead.phone), text, lead);
   const last = step >= SCRIPT.length;
   const { error } = await db
     .from("leads")
@@ -438,7 +621,7 @@ async function greetLoop() {
         (!lastSent || now - lastSent >= gap * 60_000);
       const followUp = followUpTime ? await dueFollowUp() : null;
       if (followUp) {
-        await typeAndSend(phoneToJid(followUp.phone), cleanText(FOLLOW_UP));
+        await typeAndSend(phoneToJid(followUp.phone), cleanText(FOLLOW_UP), followUp);
         await db
           .from("leads")
           .update({ followed_up_at: now.toISOString(), last_out_at: now.toISOString() })
@@ -463,7 +646,7 @@ async function greetLoop() {
         log(`✗ ${lead.name || lead.phone} مالوش واتساب — اتعلّم «بدون واتساب»`);
         continue;
       }
-      await typeAndSend(check.jid || phoneToJid(lead.phone), GREETING);
+      await typeAndSend(check.jid || phoneToJid(lead.phone), GREETING, lead);
       const sentAt = new Date().toISOString();
       await db.from("leads").update({ greeted_at: sentAt, last_out_at: sentAt }).eq("id", lead.id);
       log(`✓ التحية اتبعتت لـ ${lead.name || lead.phone}`);

@@ -1,11 +1,19 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { CalendarCheck, ChartColumn, History, Smartphone, Users } from "lucide-react";
+import {
+  CalendarCheck,
+  ChartColumn,
+  History,
+  MessagesSquare,
+  Smartphone,
+  Users,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatArabicDate } from "@/lib/leads";
 
 const tabs = [
   { to: "/today", label: "لوحة اليوم", short: "اليوم", Icon: CalendarCheck },
+  { to: "/replies", label: "الردود", short: "الردود", Icon: MessagesSquare },
   { to: "/clients", label: "العملاء", short: "العملاء", Icon: Users },
   { to: "/analytics", label: "التحليلات", short: "تحليلات", Icon: ChartColumn },
   { to: "/senders", label: "أرقام الإرسال", short: "الأرقام", Icon: Smartphone },
@@ -77,7 +85,7 @@ export function AppShell({ children, badge }: { children: ReactNode; badge?: str
 
       {/* Phone: app-style tab bar pinned to the bottom */}
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:hidden">
-        <div className="grid grid-cols-5">
+        <div className="grid grid-cols-6">
           {tabs.map(({ to, short, Icon }) => (
             <Link
               key={to}

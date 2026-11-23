@@ -1,29 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { copyText } from "@/lib/clipboard";
 import { GREETING, whatsappNumber, withoutSalam } from "@/lib/leads";
 
 const pill =
   "rounded-md px-2.5 py-1.5 text-xs font-medium ring-1 transition-colors sm:px-2 sm:py-0.5 sm:text-[11px]";
 const green = `${pill} bg-success text-success-foreground ring-success-foreground/30 hover:ring-success-foreground/60`;
-
-async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // The clipboard API needs https or localhost; fall back when opened over plain http (LAN)
-    const area = document.createElement("textarea");
-    area.value = text;
-    area.setAttribute("readonly", "");
-    area.style.position = "fixed";
-    area.style.opacity = "0";
-    document.body.appendChild(area);
-    area.select();
-    const ok = document.execCommand("copy");
-    area.remove();
-    return ok;
-  }
-}
 
 /**
  * Opens the WhatsApp app on this number with `text` typed in, ready to send. Phones get
@@ -32,7 +14,7 @@ async function copyText(text: string) {
  * empty. Computers keep whatsapp:// (straight into the desktop app). Both links are
  * rendered and CSS shows the one for the device.
  */
-function AppLink({
+export function AppLink({
   number,
   text,
   onClick,

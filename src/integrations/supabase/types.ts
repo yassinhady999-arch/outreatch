@@ -89,6 +89,13 @@ export type Database = {
       leads: {
         Row: {
           city: string | null
+          last_in_at: string | null
+          last_in_kind: string | null
+          last_in_text: string | null
+          last_msg_at: string | null
+          last_msg_author: string | null
+          manager_phone: string | null
+          manager_phone_at: string | null
           followed_up_at: string | null
           last_out_at: string | null
           replied_at: string | null
@@ -110,6 +117,13 @@ export type Database = {
         }
         Insert: {
           city?: string | null
+          last_in_at?: string | null
+          last_in_kind?: string | null
+          last_in_text?: string | null
+          last_msg_at?: string | null
+          last_msg_author?: string | null
+          manager_phone?: string | null
+          manager_phone_at?: string | null
           followed_up_at?: string | null
           last_out_at?: string | null
           replied_at?: string | null
@@ -131,6 +145,13 @@ export type Database = {
         }
         Update: {
           city?: string | null
+          last_in_at?: string | null
+          last_in_kind?: string | null
+          last_in_text?: string | null
+          last_msg_at?: string | null
+          last_msg_author?: string | null
+          manager_phone?: string | null
+          manager_phone_at?: string | null
           followed_up_at?: string | null
           last_out_at?: string | null
           replied_at?: string | null
@@ -156,6 +177,66 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          author: string
+          auto: boolean
+          body: string
+          chat_phone: string
+          created_at: string
+          id: string
+          kind: string
+          lead_id: string
+          sender_id: string | null
+          sent_at: string
+          user_id: string
+          wa_id: string
+        }
+        Insert: {
+          author: string
+          auto?: boolean
+          body?: string
+          chat_phone: string
+          created_at?: string
+          id?: string
+          kind?: string
+          lead_id: string
+          sender_id?: string | null
+          sent_at?: string
+          user_id?: string
+          wa_id: string
+        }
+        Update: {
+          author?: string
+          auto?: boolean
+          body?: string
+          chat_phone?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          lead_id?: string
+          sender_id?: string | null
+          sent_at?: string
+          user_id?: string
+          wa_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "senders"
             referencedColumns: ["id"]
           },
         ]

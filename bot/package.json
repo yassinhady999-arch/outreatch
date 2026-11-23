@@ -5,7 +5,7 @@
   "description": "Sends the greeting automatically and the clinic's own message after its first reply (WhatsApp Web protocol via Baileys).",
   "scripts": {
     "start": "node --env-file=.env index.mjs",
-    "test": "node --test core.test.mjs auth-store.test.mjs",
+    "test": "node --test core.test.mjs auth-store.test.mjs record.test.mjs",
     "upload-session": "node --env-file=.env upload-session.mjs"
   },
   "dependencies": {

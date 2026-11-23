@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
 import { Route as AuthenticatedClientsRouteImport } from './routes/_authenticated/clients'
 import { Route as AuthenticatedLogRouteImport } from './routes/_authenticated/log'
+import { Route as AuthenticatedRepliesRouteImport } from './routes/_authenticated/replies'
 import { Route as AuthenticatedSendersRouteImport } from './routes/_authenticated/senders'
 import { Route as AuthenticatedTodayRouteImport } from './routes/_authenticated/today'
 
@@ -47,6 +48,11 @@ const AuthenticatedLogRoute = AuthenticatedLogRouteImport.update({
   path: '/log',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedRepliesRoute = AuthenticatedRepliesRouteImport.update({
+  id: '/replies',
+  path: '/replies',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedSendersRoute = AuthenticatedSendersRouteImport.update({
   id: '/senders',
   path: '/senders',
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/clients': typeof AuthenticatedClientsRoute
   '/log': typeof AuthenticatedLogRoute
+  '/replies': typeof AuthenticatedRepliesRoute
   '/senders': typeof AuthenticatedSendersRoute
   '/today': typeof AuthenticatedTodayRoute
 }
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/clients': typeof AuthenticatedClientsRoute
   '/log': typeof AuthenticatedLogRoute
+  '/replies': typeof AuthenticatedRepliesRoute
   '/senders': typeof AuthenticatedSendersRoute
   '/today': typeof AuthenticatedTodayRoute
 }
@@ -84,15 +92,31 @@ export interface FileRoutesById {
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/clients': typeof AuthenticatedClientsRoute
   '/_authenticated/log': typeof AuthenticatedLogRoute
+  '/_authenticated/replies': typeof AuthenticatedRepliesRoute
   '/_authenticated/senders': typeof AuthenticatedSendersRoute
   '/_authenticated/today': typeof AuthenticatedTodayRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/auth' | '/analytics' | '/clients' | '/log' | '/senders' | '/today'
+    | '/'
+    | '/auth'
+    | '/analytics'
+    | '/clients'
+    | '/log'
+    | '/replies'
+    | '/senders'
+    | '/today'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/analytics' | '/clients' | '/log' | '/senders' | '/today'
+  to:
+    | '/'
+    | '/auth'
+    | '/analytics'
+    | '/clients'
+    | '/log'
+    | '/replies'
+    | '/senders'
+    | '/today'
   id:
     | '__root__'
     | '/'
@@ -101,6 +125,7 @@ export interface FileRouteTypes {
     | '/_authenticated/analytics'
     | '/_authenticated/clients'
     | '/_authenticated/log'
+    | '/_authenticated/replies'
     | '/_authenticated/senders'
     | '/_authenticated/today'
   fileRoutesById: FileRoutesById
@@ -155,6 +180,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLogRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/replies': {
+      id: '/_authenticated/replies'
+      path: '/replies'
+      fullPath: '/replies'
+      preLoaderRoute: typeof AuthenticatedRepliesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/senders': {
       id: '/_authenticated/senders'
       path: '/senders'
@@ -176,6 +208,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAnalyticsRoute: typeof AuthenticatedAnalyticsRoute
   AuthenticatedClientsRoute: typeof AuthenticatedClientsRoute
   AuthenticatedLogRoute: typeof AuthenticatedLogRoute
+  AuthenticatedRepliesRoute: typeof AuthenticatedRepliesRoute
   AuthenticatedSendersRoute: typeof AuthenticatedSendersRoute
   AuthenticatedTodayRoute: typeof AuthenticatedTodayRoute
 }
@@ -184,6 +217,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAnalyticsRoute: AuthenticatedAnalyticsRoute,
   AuthenticatedClientsRoute: AuthenticatedClientsRoute,
   AuthenticatedLogRoute: AuthenticatedLogRoute,
+  AuthenticatedRepliesRoute: AuthenticatedRepliesRoute,
   AuthenticatedSendersRoute: AuthenticatedSendersRoute,
   AuthenticatedTodayRoute: AuthenticatedTodayRoute,
 }
